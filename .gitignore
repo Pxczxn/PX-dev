@@ -10,7 +10,9 @@ coverage/
 .env.local
 .env.*.local
 .workbuddy/
-docs/
+docs/*
 tests/
 .idea/
 resources/tray-icon.png
+
+!docs/system_design.md
