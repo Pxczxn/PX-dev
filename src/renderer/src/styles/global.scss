@@ -1,0 +1,263 @@
+// PX Dev — Global Styles & Design Tokens
+// Canonical tokens are CSS custom properties under :root (dark is default).
+// [data-theme="light"] overrides them so the theme switch stays coherent.
+
+:root {
+  /* ---- Brand accent ---- */
+  --accent: #2b8cff;
+  --accent-hover: #4ba0ff;
+  --accent-pressed: #1f6fe0;
+  --accent-soft: rgba(43, 140, 255, 0.14);
+  --accent-contrast: #ffffff;
+
+  /* ---- Semantic status ---- */
+  --c-running: #2bc16b;
+  --c-starting: #2b8cff;
+  --c-warning: #f5a524;
+  --c-failed: #f2545b;
+  --c-stopped: #8a90a2;
+
+  /* ---- Dark surfaces (default) ---- */
+  --bg-app: #0b0c11;
+  --bg-sidebar: #11131c;
+  --bg-content: #0e0f16;
+  --bg-surface-1: #16181f;
+  --bg-surface-2: #1c1f29;
+  --bg-hover: #1e212b;
+  --bg-active: rgba(43, 140, 255, 0.12);
+
+  /* ---- Borders ---- */
+  --border-subtle: rgba(255, 255, 255, 0.06);
+  --border-default: rgba(255, 255, 255, 0.09);
+  --border-strong: rgba(255, 255, 255, 0.14);
+
+  /* ---- Text ---- */
+  --text-1: #e8eaed;
+  --text-2: #aab0bd;
+  --text-3: #6b7180;
+  --text-4: #4a4f5c;
+
+  /* ---- Radius ---- */
+  --r-xs: 6px;
+  --r-sm: 8px;
+  --r-md: 12px;
+  --r-lg: 16px;
+  --r-xl: 20px;
+  --r-full: 999px;
+
+  /* ---- Spacing (4/8 base) ---- */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+  --sp-10: 40px;
+  --sp-12: 48px;
+
+  /* ---- Elevation ---- */
+  --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.35);
+  --shadow-3: 0 16px 40px rgba(0, 0, 0, 0.45);
+  --shadow-accent: 0 8px 24px rgba(43, 140, 255, 0.25);
+
+  /* ---- Typography ---- */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", "SFMono-Regular",
+    Consolas, monospace;
+  --fs-display: 20px;
+  --fs-title: clamp(20px, 1.2vw + 14px, 26px);
+  --fs-section: 15px;
+  --fs-body: 14px;
+  --fs-caption: 12px;
+  --lh-tight: 1.25;
+  --lh-base: 1.6;
+
+  /* ---- Motion ---- */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-1: 150ms;
+  --dur-2: 250ms;
+  --dur-3: 400ms;
+}
+
+[data-theme="light"] {
+  --accent: #2b8cff;
+  --accent-hover: #1f78f0;
+  --accent-pressed: #1a66d0;
+  --accent-soft: rgba(43, 140, 255, 0.1);
+  --accent-contrast: #ffffff;
+
+  --c-running: #1ba85f;
+  --c-starting: #2b8cff;
+  --c-warning: #d98300;
+  --c-failed: #e23b46;
+  --c-stopped: #9aa0ad;
+
+  --bg-app: #f4f5f7;
+  --bg-sidebar: #ffffff;
+  --bg-content: #f4f5f7;
+  --bg-surface-1: #ffffff;
+  --bg-surface-2: #f0f2f5;
+  --bg-hover: #eef1f5;
+  --bg-active: rgba(43, 140, 255, 0.08);
+
+  --border-subtle: rgba(0, 0, 0, 0.06);
+  --border-default: rgba(0, 0, 0, 0.1);
+  --border-strong: rgba(0, 0, 0, 0.16);
+
+  --text-1: #1a1d23;
+  --text-2: #4a5160;
+  --text-3: #7a828f;
+  --text-4: #a4abb6;
+
+  --shadow-1: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-2: 0 8px 24px rgba(16, 24, 40, 0.08);
+  --shadow-3: 0 16px 40px rgba(16, 24, 40, 0.12);
+  --shadow-accent: 0 8px 24px rgba(43, 140, 255, 0.2);
+}
+
+/* ---- Reset ---- */
+*,
+*::before,
+*::after {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#app {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--bg-app);
+  color: var(--text-1);
+  font-size: var(--fs-body);
+  line-height: var(--lh-base);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* ---- Scrollbar ---- */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: var(--r-full);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-4);
+  background-clip: padding-box;
+}
+
+/* ---- Selection ---- */
+::selection {
+  background: var(--accent-soft);
+  color: var(--text-1);
+}
+
+/* ---- Focus ring (accessibility) ---- */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* ---- Page layout utilities ---- */
+.page-container {
+  padding: var(--sp-6);
+  min-height: 100%;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-6);
+}
+
+.page-title {
+  font-size: var(--fs-title);
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: var(--lh-tight);
+  color: var(--text-1);
+}
+
+.section-title {
+  font-size: var(--fs-section);
+  font-weight: 600;
+  color: var(--text-1);
+}
+
+.card-grid {
+  display: grid;
+  gap: var(--sp-4);
+}
+
+/* Shared bordered table card (Services / WorkspaceDetail / Ports / Environment) */
+.table-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.flex-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.flex-between {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* ---- Monospace ---- */
+.mono {
+  font-family: var(--font-mono);
+  font-variant-ligatures: contextual;
+}
+
+/* ---- Route transition ---- */
+.route-fade-enter-active,
+.route-fade-leave-active {
+  transition: opacity var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-out);
+}
+.route-fade-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.route-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* ---- Staggered card entrance ---- */
+@keyframes card-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

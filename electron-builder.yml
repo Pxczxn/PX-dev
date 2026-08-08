@@ -1,0 +1,20 @@
+appId: com.pxdev.app
+productName: PX Dev
+directories:
+  buildResources: build
+  output: release/${version}
+files:
+  - out/**/*
+  - resources/**/*
+  - package.json
+win:
+  icon: build/icon.ico
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true

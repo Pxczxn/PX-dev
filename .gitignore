@@ -1,0 +1,16 @@
+node_modules/
+out/
+release/
+dist/
+.vite-cache/
+*.log
+.DS_Store
+Thumbs.db
+coverage/
+.env.local
+.env.*.local
+.workbuddy/
+docs/
+tests/
+.idea/
+resources/tray-icon.png

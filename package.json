@@ -1,0 +1,49 @@
+{
+  "name": "px-dev",
+  "version": "0.1.0",
+  "description": "PX Dev — 本地开发环境与项目进程管理工具",
+  "author": "PX Dev Team",
+  "license": "MIT",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "preview": "electron-vite preview",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.web.json && tsc --noEmit -p tsconfig.node.json",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
+    "typecheck:web": "vue-tsc --noEmit -p tsconfig.web.json",
+    "lint": "eslint . --ext .ts,.vue --fix",
+    "lint:check": "eslint . --ext .ts,.vue",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "build:win": "electron-vite build && electron-builder --win --config electron-builder.yml",
+    "pack": "electron-builder --dir --config electron-builder.yml"
+  },
+  "dependencies": {
+    "tree-kill": "^1.2.2",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.9",
+    "@typescript-eslint/eslint-plugin": "^7.13.0",
+    "@typescript-eslint/parser": "^7.13.0",
+    "@vicons/ionicons5": "^0.12.0",
+    "@vitejs/plugin-vue": "^5.0.5",
+    "@vue/eslint-config-typescript": "^13.0.0",
+    "@vue/test-utils": "^2.4.6",
+    "electron": "^31.1.0",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "eslint": "^8.57.0",
+    "eslint-plugin-vue": "^9.27.0",
+    "naive-ui": "^2.38.1",
+    "pinia": "^2.1.7",
+    "sass": "^1.77.6",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.3",
+    "vitest": "^2.0.3",
+    "vue": "^3.4.31",
+    "vue-router": "^4.4.0",
+    "vue-tsc": "^2.0.26"
+  }
+}

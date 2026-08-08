@@ -1,0 +1,62 @@
+// PX Dev — Design Tokens (SCSS mirror)
+// Canonical tokens live as CSS custom properties in global.scss (:root).
+// This file mirrors the same values for any <style lang="scss"> block that
+// prefers SCSS variables. Keep both in sync.
+
+// Brand accent
+$accent: #2b8cff;
+$accent-hover: #4ba0ff;
+$accent-pressed: #1f6fe0;
+$accent-soft: rgba(43, 140, 255, 0.14);
+
+// Semantic status colors
+$c-running: #2bc16b;
+$c-starting: #2b8cff;
+$c-warning: #f5a524;
+$c-failed: #f2545b;
+$c-stopped: #8a90a2;
+
+// Dark surfaces
+$bg-app: #0b0c11;
+$bg-sidebar: #11131c;
+$bg-content: #0e0f16;
+$bg-surface-1: #16181f;
+$bg-surface-2: #1c1f29;
+$bg-hover: #1e212b;
+$bg-active: rgba(43, 140, 255, 0.12);
+
+// Borders
+$border-subtle: rgba(255, 255, 255, 0.06);
+$border-default: rgba(255, 255, 255, 0.09);
+$border-strong: rgba(255, 255, 255, 0.14);
+
+// Text
+$text-1: #e8eaed;
+$text-2: #aab0bd;
+$text-3: #6b7180;
+$text-4: #4a4f5c;
+
+// Radius
+$r-xs: 6px;
+$r-sm: 8px;
+$r-md: 12px;
+$r-lg: 16px;
+$r-xl: 20px;
+$r-full: 999px;
+
+// Spacing
+$sp-1: 4px;
+$sp-2: 8px;
+$sp-3: 12px;
+$sp-4: 16px;
+$sp-5: 20px;
+$sp-6: 24px;
+$sp-8: 32px;
+$sp-10: 40px;
+$sp-12: 48px;
+
+// Elevation
+$shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
+$shadow-2: 0 8px 24px rgba(0, 0, 0, 0.35);
+$shadow-3: 0 16px 40px rgba(0, 0, 0, 0.45);
+$shadow-accent: 0 8px 24px rgba(43, 140, 255, 0.25);
