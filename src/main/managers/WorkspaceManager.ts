@@ -32,6 +32,7 @@ export interface CreateServiceInput {
   workspaceId: string
   name: string
   type: 'frontend' | 'node' | 'java' | 'generic'
+  role: 'frontend' | 'backend'
   cwd: string
   command: string
   args?: string[]
@@ -278,6 +279,7 @@ export class WorkspaceManager {
       workspaceId: input.workspaceId,
       name: input.name,
       type: input.type,
+      role: input.role,
       cwd: input.cwd,
       command: input.command,
       args: input.args,

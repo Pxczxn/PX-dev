@@ -32,6 +32,8 @@ export interface Workspace {
 }
 
 // ============ Service ============
+export type ServiceRole = 'frontend' | 'backend'
+
 export interface Service {
   /** crypto.randomUUID() */
   id: string
@@ -39,8 +41,10 @@ export interface Service {
   workspaceId: string
   /** 非空 */
   name: string
-  /** 服务类型 */
+  /** 服务类型（技术运行时类型） */
   type: 'frontend' | 'node' | 'java' | 'generic'
+  /** 角色/分类（UI分组用，frontend/backend） */
+  role: ServiceRole
   /** 工作目录（绝对路径，非空） */
   cwd: string
   /** 可执行命令（如 'npm' / 'pnpm' / 'mvnw'） */

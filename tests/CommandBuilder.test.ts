@@ -26,6 +26,7 @@ function makeService(overrides: Partial<Service> = {}): Service {
     workspaceId: 'ws-1',
     name: '前端',
     type: 'frontend',
+    role: 'frontend',
     cwd: 'D:/tmp',
     command: 'npm',
     args: ['run', 'dev'],

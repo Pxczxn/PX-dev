@@ -84,6 +84,8 @@ async function handleDeleteService(svc: Service): Promise<void> {
       <NCard size="small" :bordered="false" class="table-card">
         <ServiceTable
           :services="filteredServices"
+          :workspaces="workspaceStore.workspaces"
+          group-mode="workspace-role"
           @edit="openEditService"
           @delete="handleDeleteService"
         />
@@ -98,3 +100,23 @@ async function handleDeleteService(svc: Service): Promise<void> {
     />
   </div>
 </template>
+
+<style scoped>
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--sp-4);
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin: 0;
+}
+
+.table-card {
+  margin-top: 0;
+}
+</style>

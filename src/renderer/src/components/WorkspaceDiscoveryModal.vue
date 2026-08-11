@@ -87,6 +87,75 @@ const applying = computed(() => phase.value === 'applying')
 const selectedCount = computed(() => selectedIds.value.length)
 const canApply = computed(() => phase.value === 'review' && selectedCount.value > 0)
 
+// 全选状态（用于 v-model）
+const allSelected = ref(false)
+
+// ============ Select All ============
+const isAllSelected = computed(() => {
+  if (projects.value.length === 0) return false
+  return projects.value.every((p) => selectedIds.value.includes(p.id))
+})
+
+const isIndeterminate = computed(() => {
+  if (projects.value.length === 0) return false
+  const selected = projects.value.filter((p) => selectedIds.value.includes(p.id)).length
+  return selected > 0 && selected < projects.value.length
+})
+
+function toggleSelectAll(checked: boolean): void {
+  if (checked) {
+    selectedIds.value = projects.value.map((p) => p.id)
+  } else {
+    selectedIds.value = []
+  }
+  allSelected.value = checked
+}
+
+// 只选前端
+function selectOnlyFrontend(): void {
+  selectedIds.value = projects.value
+    .filter((p) => p.suggestedServiceType === 'frontend' || p.projectType === 'frontend')
+    .map((p) => p.id)
+  updateAllSelectedState()
+}
+
+// 只选后端
+function selectOnlyBackend(): void {
+  selectedIds.value = projects.value
+    .filter((p) => {
+      const t = p.suggestedServiceType ?? p.projectType
+      return t === 'backend' || t === 'node' || t === 'java'
+    })
+    .map((p) => p.id)
+  updateAllSelectedState()
+}
+
+function updateAllSelectedState(): void {
+  allSelected.value = projects.value.length > 0 && selectedIds.value.length === projects.value.length
+}
+
+// 选中状态判断
+const isOnlyFrontendSelected = computed(() => {
+  if (projects.value.length === 0) return false
+  const frontendIds = projects.value
+    .filter((p) => p.suggestedServiceType === 'frontend' || p.projectType === 'frontend')
+    .map((p) => p.id)
+  if (frontendIds.length === 0) return false
+  return frontendIds.every((id) => selectedIds.value.includes(id)) && selectedIds.value.length === frontendIds.length
+})
+
+const isOnlyBackendSelected = computed(() => {
+  if (projects.value.length === 0) return false
+  const backendIds = projects.value
+    .filter((p) => {
+      const t = p.suggestedServiceType ?? p.projectType
+      return t === 'backend' || t === 'node' || t === 'java'
+    })
+    .map((p) => p.id)
+  if (backendIds.length === 0) return false
+  return backendIds.every((id) => selectedIds.value.includes(id)) && selectedIds.value.length === backendIds.length
+})
+
 const confidenceMeta: Record<DiscoveryConfidence, { label: string; type: 'success' | 'warning' | 'default' }> = {
   high: { label: '高可信', type: 'success' },
   medium: { label: '中可信', type: 'warning' },
@@ -106,6 +175,7 @@ watch(
     projects.value = []
     warnings.value = []
     selectedIds.value = []
+    allSelected.value = false
   },
 )
 
@@ -205,6 +275,8 @@ async function handleScan(): Promise<void> {
     warnings.value = result.warnings.map((w) => ({ message: w.message, severity: w.severity }))
     // 默认勾选由扫描器给出：!isLibrary && confidence !== 'low'
     selectedIds.value = result.projects.filter((p) => p.suggestedSelected).map((p) => p.id)
+    // 同步全选状态
+    allSelected.value = projects.value.length > 0 && selectedIds.value.length === projects.value.length
     phase.value = 'review'
 
     if (result.projects.length === 0) {
@@ -275,29 +347,23 @@ async function handleApply(): Promise<void> {
           </NButton>
         </NInputGroup>
       </NFormItem>
-    </NForm>
-
-    <!-- 高级选项 -->
-    <NCollapse class="advanced">
-      <NCollapseItem title="高级选项" name="advanced">
-        <NSpace align="center" :size="24">
-          <NSpace align="center" :size="8">
-            <NText depth="3">最大扫描深度</NText>
-            <NInputNumber
-              v-model:value="maxDepth"
-              :min="1"
-              :max="8"
-              :disabled="scanning || applying"
-              style="width: 120px;"
-            />
-          </NSpace>
-          <NSpace align="center" :size="8">
-            <NText depth="3">包含 library 模块</NText>
-            <NSwitch v-model:value="includeLibrary" :disabled="scanning || applying" />
-          </NSpace>
+      <NSpace align="center" :size="24">
+        <NSpace align="center" :size="8">
+          <NText depth="3">最大扫描深度</NText>
+          <NInputNumber
+            v-model:value="maxDepth"
+            :min="1"
+            :max="8"
+            :disabled="scanning || applying"
+            style="width: 120px;"
+          />
         </NSpace>
-      </NCollapseItem>
-    </NCollapse>
+        <NSpace align="center" :size="8">
+          <NText depth="3">包含 library 模块</NText>
+          <NSwitch v-model:value="includeLibrary" :disabled="scanning || applying" />
+        </NSpace>
+      </NSpace>
+    </NForm>
 
     <!-- 扫描失败 -->
     <NAlert v-if="phase === 'error'" type="error" class="block" :show-icon="true">
@@ -327,7 +393,35 @@ async function handleApply(): Promise<void> {
           description="未发现可识别的项目"
           class="placeholder"
         />
-        <NScrollbar v-else-if="projects.length > 0" style="max-height: 360px;">
+        <div v-else-if="projects.length > 0" class="projects-header">
+          <div class="selection-group">
+            <label
+              class="selection-btn"
+              :class="{ active: isAllSelected }"
+              @click="toggleSelectAll(!isAllSelected)"
+            >
+              全选
+            </label>
+            <label
+              class="selection-btn"
+              :class="{ active: isOnlyFrontendSelected }"
+              @click="selectOnlyFrontend"
+            >
+              只选前端
+            </label>
+            <label
+              class="selection-btn"
+              :class="{ active: isOnlyBackendSelected }"
+              @click="selectOnlyBackend"
+            >
+              只选后端
+            </label>
+          </div>
+          <NText depth="3" style="margin-left: auto;">
+            共 {{ projects.length }} 个候选，已选 {{ selectedCount }} 个
+          </NText>
+        </div>
+        <NScrollbar v-if="projects.length > 0" style="max-height: 340px;">
           <div v-for="project in projects" :key="project.id" class="project-row">
             <NCheckbox
               :checked="isSelected(project.id)"
@@ -389,9 +483,7 @@ async function handleApply(): Promise<void> {
 
     <template #footer>
       <NSpace justify="space-between" align="center">
-        <NText depth="3">
-          共 {{ projects.length }} 个候选，已选 {{ selectedCount }} 个
-        </NText>
+        <div></div>
         <NSpace>
           <NButton :disabled="scanning || applying" @click="emit('update:show', false)">
             取消
@@ -410,16 +502,46 @@ async function handleApply(): Promise<void> {
 </template>
 
 <style scoped>
-.advanced {
-  margin-bottom: var(--sp-3, 12px);
-}
-
 .block {
   margin-bottom: var(--sp-3, 12px);
 }
 
 .result-area {
   min-height: 160px;
+}
+
+.projects-header {
+  display: flex;
+  align-items: center;
+  padding: 8px 4px;
+  border-bottom: 1px solid var(--n-border-color, rgba(255, 255, 255, 0.09));
+}
+
+.selection-group {
+  display: flex;
+  gap: 4px;
+  background: var(--n-action-color, rgba(255, 255, 255, 0.06));
+  padding: 3px;
+  border-radius: 20px;
+}
+
+.selection-btn {
+  padding: 4px 14px;
+  font-size: 13px;
+  color: #555;
+  cursor: pointer;
+  border-radius: 16px;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.selection-btn:hover {
+  color: #111;
+}
+
+.selection-btn.active {
+  background: var(--n-primary-color, #18a058) !important;
+  color: #fff !important;
 }
 
 .placeholder {

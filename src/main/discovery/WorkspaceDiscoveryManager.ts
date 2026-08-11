@@ -19,7 +19,7 @@ import type {
   WorkspaceDiscoveryResult,
 } from '@shared/types'
 import { DISCOVERY_DEFAULTS } from '@shared/schemas/discovery.schema'
-import { detectStaticPorts } from '../detectors'
+import { detectServiceRole, detectStaticPorts } from '../detectors'
 import type { ScannerRegistry } from '../scanners'
 import { DirectoryWalker } from './DirectoryWalker'
 import type { Confidence } from './utils/confidence'
@@ -142,6 +142,7 @@ export class WorkspaceDiscoveryManager {
       endpoints: endpoints.length > 0 ? endpoints : undefined,
       isLibrary,
       suggestedServiceType: this.toServiceType(projectType),
+      suggestedRole: detectServiceRole(scanResult.framework, projectType),
       // Phase 6 会再叠加 `matchStatus !== 'unchanged'` 条件
       suggestedSelected: !isLibrary && confidence !== 'low',
       confidence,

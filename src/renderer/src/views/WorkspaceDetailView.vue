@@ -1,25 +1,29 @@
 <script setup lang="ts">
 // PX Dev — WorkspaceDetailView
-// Top action bar + ServiceTable for a single workspace
+// Workspace detail page with role-based service grouping
 
 import { onMounted, ref, computed } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NButton,
-  NSpace,
   NSpin,
   NCard,
+  NDropdown,
   NPopconfirm,
   useMessage,
+  NIcon,
 } from 'naive-ui'
+import type { DropdownOption } from 'naive-ui'
 import {
   PlayOutline,
   StopOutline,
   AddOutline,
-  ArrowBackOutline,
-  TrashOutline,
   SearchOutline,
   TrashBinOutline,
+  EllipsisVerticalOutline,
+  FolderOpenOutline,
+  CreateOutline,
+  TrashOutline,
 } from '@vicons/ionicons5'
 import ServiceTable from '@renderer/components/ServiceTable.vue'
 import ServiceEditDrawer from '@renderer/components/ServiceEditDrawer.vue'
@@ -39,6 +43,19 @@ const workspaceId = computed(() => route.params.id as string)
 const workspace = computed(() => workspaceStore.getWorkspace(workspaceId.value))
 const services = computed(() => workspaceStore.getServicesByWorkspace(workspaceId.value))
 
+// Stats
+const serviceCount = computed(() => services.value.length)
+const runningCount = computed(() => {
+  let count = 0
+  for (const svc of services.value) {
+    const rt = runtimeStore.getRuntime(svc.id)
+    if (rt?.status === 'running' || rt?.status === 'starting') {
+      count++
+    }
+  }
+  return count
+})
+
 const showEditDrawer = ref(false)
 const showDiscoveryModal = ref(false)
 const editingService = ref<Service | null>(null)
@@ -52,7 +69,6 @@ onMounted(async () => {
     workspaceStore.fetchServices(),
   ])
   runtimeStore.startListening()
-  // Phase 6：窗口刷新后从 Main 拉取已有端点快照（兜底，事件可能在 mount 前就已发出）
   await runtimeStore.syncEndpoints()
   loading.value = false
 })
@@ -106,7 +122,6 @@ async function handleDeleteService(svc: Service): Promise<void> {
 
 async function handleBatchDelete(serviceIds: string[]): Promise<void> {
   try {
-    // Refresh services list after batch delete
     await workspaceStore.fetchServices()
     await runtimeStore.syncAll()
   } catch (err) {
@@ -116,6 +131,53 @@ async function handleBatchDelete(serviceIds: string[]): Promise<void> {
 
 function openBatchDeleteModal(): void {
   serviceTableRef.value?.openBatchDeleteModal()
+}
+
+// More menu
+const moreMenuOptions = computed<DropdownOption[]>(() => [
+  {
+    label: '打开工作区目录',
+    key: 'open-root',
+    icon: () => h(NIcon, null, { default: () => h(FolderOpenOutline) }),
+  },
+  {
+    label: '编辑工作区',
+    key: 'edit-workspace',
+    icon: () => h(NIcon, null, { default: () => h(CreateOutline) }),
+  },
+  {
+    type: 'divider',
+    key: 'd1',
+  },
+  {
+    label: '删除工作区',
+    key: 'delete-workspace',
+    icon: () => h(NIcon, null, { default: () => h(TrashOutline) }),
+  },
+])
+
+async function handleMoreMenuSelect(key: string): Promise<void> {
+  switch (key) {
+    case 'open-root': {
+      if (workspace.value?.rootPath) {
+        try {
+          await api.system.openPath(workspace.value.rootPath)
+        } catch (err) {
+          message.error('打开目录失败')
+          console.error(err)
+        }
+      }
+      break
+    }
+    case 'edit-workspace': {
+      message.info('编辑工作区功能开发中')
+      break
+    }
+    case 'delete-workspace': {
+      await deleteWorkspace()
+      break
+    }
+  }
 }
 
 async function deleteWorkspace(): Promise<void> {
@@ -134,20 +196,22 @@ async function deleteWorkspace(): Promise<void> {
 <template>
   <div class="page-container">
     <NSpin :show="loading">
-      <!-- Top Action Bar -->
-      <div class="action-bar">
-        <div class="flex-row">
-          <NButton quaternary circle @click="router.push('/workspaces')">
-            <ArrowBackOutline />
-          </NButton>
-          <h2 class="page-title">{{ workspace?.name ?? '工作区详情' }}</h2>
+      <!-- Page Header -->
+      <div class="page-header">
+        <div class="header-left">
+          <h1 class="page-title">{{ workspace?.name ?? '工作区详情' }}</h1>
+          <span class="page-stats">
+            {{ serviceCount }} 个服务 · {{ runningCount }} 个运行中
+          </span>
         </div>
-        <NSpace>
-          <NButton type="primary" @click="startAll" :disabled="services.length === 0">
+        
+        <!-- Action Buttons -->
+        <div class="action-bar">
+          <NButton type="primary" @click="startAll" :disabled="serviceCount === 0">
             <template #icon><PlayOutline /></template>
             全部启动
           </NButton>
-          <NButton @click="stopAll" :disabled="services.length === 0">
+          <NButton @click="stopAll" :disabled="serviceCount === 0">
             <template #icon><StopOutline /></template>
             全部停止
           </NButton>
@@ -155,28 +219,30 @@ async function deleteWorkspace(): Promise<void> {
             <template #icon><AddOutline /></template>
             添加服务
           </NButton>
-          <NButton
-            type="error"
-            @click="openBatchDeleteModal"
-            :disabled="!serviceTableRef?.selectedCount"
-          >
-            <template #icon><TrashBinOutline /></template>
-            删除选中
-          </NButton>
           <NButton @click="showDiscoveryModal = true">
             <template #icon><SearchOutline /></template>
             扫描工作区
           </NButton>
-          <NPopconfirm @positive-click="deleteWorkspace">
-            <template #trigger>
-              <NButton type="error" quaternary>
-                <template #icon><TrashOutline /></template>
-                删除工作区
-              </NButton>
-            </template>
-            确认删除工作区 "{{ workspace?.name }}"？所有关联服务将一并删除。
-          </NPopconfirm>
-        </NSpace>
+          <NButton 
+            v-if="serviceTableRef?.selectedCount"
+            type="error" 
+            @click="openBatchDeleteModal"
+          >
+            <template #icon><TrashBinOutline /></template>
+            删除选中
+          </NButton>
+          
+          <!-- More Menu -->
+          <NDropdown 
+            :options="moreMenuOptions" 
+            @select="handleMoreMenuSelect"
+            trigger="click"
+          >
+            <NButton quaternary circle>
+              <template #icon><EllipsisVerticalOutline /></template>
+            </NButton>
+          </NDropdown>
+        </div>
       </div>
 
       <!-- Service Table -->
@@ -184,7 +250,7 @@ async function deleteWorkspace(): Promise<void> {
         <ServiceTable
           ref="serviceTableRef"
           :services="services"
-          :workspaces="workspaceStore.workspaces"
+          group-mode="role-only"
           @edit="openEditService"
           @delete="handleDeleteService"
           @batch-delete="handleBatchDelete"
@@ -211,10 +277,45 @@ async function deleteWorkspace(): Promise<void> {
 </template>
 
 <style scoped>
+.page-container {
+  padding: var(--sp-4);
+}
+
+.page-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: var(--sp-6);
+  gap: var(--sp-4);
+}
+
+.header-left {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+}
+
+.page-title {
+  font-size: 24px;
+  font-weight: 600;
+  color: var(--text-1);
+  margin: 0;
+  line-height: 1.2;
+}
+
+.page-stats {
+  font-size: 13px;
+  color: var(--text-3);
+}
+
 .action-bar {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: var(--sp-6);
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+}
+
+.table-card {
+  margin-top: 0;
 }
 </style>

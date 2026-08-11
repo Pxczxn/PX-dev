@@ -43,6 +43,7 @@ function toValidPort(value?: number): number | undefined {
  * | workspaceId     | 调用方传入                                                |
  * | name            | project.name                                             |
  * | type            | project.suggestedServiceType（缺失回落 'generic'）         |
+ * | role            | project.suggestedRole（缺失回落 'backend'）                |
  * | cwd             | project.path（绝对路径）                                   |
  * | command         | project.command（缺失回落 'npm'，保证 Zod 的 min(1) 通过）  |
  * | args            | project.args（空数组则省略）                               |
@@ -58,10 +59,17 @@ export function toServiceInput(
   workspaceId: string,
   detectedAt: number = Date.now(),
 ): DiscoveryServiceInput {
+  // 确保 type 在有效枚举内（扫描器可能返回 python 等非 Service 类型）
+  const validTypes = ['frontend', 'node', 'java', 'generic'] as const
+  const serviceType = validTypes.includes(project.suggestedServiceType as typeof validTypes[number])
+    ? (project.suggestedServiceType as typeof validTypes[number])
+    : 'generic'
+
   const input: DiscoveryServiceInput = {
     workspaceId,
     name: project.name,
-    type: project.suggestedServiceType ?? 'generic',
+    type: serviceType,
+    role: project.suggestedRole ?? 'backend',
     cwd: project.path,
     // 扫描器未给出推荐命令时回落到 npm，用户可在服务表格里二次编辑
     command: project.command && project.command.trim() ? project.command.trim() : 'npm',

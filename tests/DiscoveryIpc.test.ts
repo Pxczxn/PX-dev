@@ -270,6 +270,7 @@ describe('workspace:applyDiscovery', () => {
       workspaceId: WORKSPACE_ID,
       name: `svc-${i}`,
       type: 'node',
+      role: 'backend',
       cwd: `D:\\root\\svc-${i}`,
       command: 'npm',
       args: ['run', 'dev'],
@@ -313,6 +314,7 @@ describe('workspace:applyDiscovery', () => {
           workspaceId: 'ws-somewhere-else',
           name: 'evil',
           type: 'node',
+          role: 'backend',
           cwd: 'D:\\root\\evil',
           command: 'npm',
           discovery: { managed: false },
@@ -360,6 +362,7 @@ describe('workspace:applyDiscovery', () => {
       workspaceId: WORKSPACE_ID,
       name: 'manual',
       type: 'node',
+      role: 'backend',
       cwd: 'D:\\root\\manual',
       command: 'npm',
     })

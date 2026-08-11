@@ -52,6 +52,7 @@ export const CreateServiceSchema = z.object({
   workspaceId: uuidSchema,
   name: z.string().min(1).max(100),
   type: z.enum(['frontend', 'node', 'java', 'generic']),
+  role: z.enum(['frontend', 'backend']),
   cwd: pathSchema,
   command: z.string().min(1),
   args: z.array(z.string()).optional(),

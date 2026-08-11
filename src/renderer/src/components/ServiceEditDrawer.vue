@@ -31,6 +31,7 @@ interface ServiceFormData {
   workspaceId: string
   name: string
   type: 'frontend' | 'node' | 'java' | 'generic'
+  role: 'frontend' | 'backend'
   cwd: string
   command: string
   args?: string[]
@@ -65,6 +66,7 @@ const form = ref<ServiceFormData>({
   workspaceId: '',
   name: '',
   type: 'node',
+  role: 'backend',
   cwd: '',
   command: '',
   enabled: true,
@@ -83,6 +85,11 @@ const serviceTypes = [
   { label: 'Node', value: 'node' },
   { label: 'Java', value: 'java' },
   { label: '通用', value: 'generic' },
+]
+
+const serviceRoles = [
+  { label: '前端', value: 'frontend' },
+  { label: '后端', value: 'backend' },
 ]
 
 const packageManagers = [
@@ -115,6 +122,7 @@ watch(
           workspaceId: props.workspaceId,
           name: '',
           type: 'node',
+          role: 'backend',
           cwd: '',
           command: '',
           args: [],
@@ -253,6 +261,10 @@ async function handleSave(): Promise<void> {
 
         <NFormItem label="服务类型" required>
           <NSelect v-model:value="form.type" :options="serviceTypes" />
+        </NFormItem>
+
+        <NFormItem label="角色分类" required>
+          <NSelect v-model:value="form.role" :options="serviceRoles" />
         </NFormItem>
 
         <NFormItem label="工作目录" required>

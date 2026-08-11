@@ -44,10 +44,11 @@ function baseProject(overrides: Partial<DiscoveredProject> = {}): DiscoveredProj
 }
 
 describe('toServiceInput — 基础字段映射', () => {
-  it('name / cwd / type / command / args 按约定映射', () => {
+  it('name / cwd / type / role / command / args 按约定映射', () => {
     const input = toServiceInput(
       baseProject({
         suggestedServiceType: 'frontend',
+        suggestedRole: 'frontend',
         command: 'npm',
         args: ['run', 'dev'],
       }),
@@ -58,6 +59,7 @@ describe('toServiceInput — 基础字段映射', () => {
     expect(input.workspaceId).toBe(WS_ID)
     expect(input.name).toBe('web')
     expect(input.type).toBe('frontend')
+    expect(input.role).toBe('frontend')
     expect(input.cwd).toBe('D:/proj/web')
     expect(input.command).toBe('npm')
     expect(input.args).toEqual(['run', 'dev'])
@@ -66,6 +68,16 @@ describe('toServiceInput — 基础字段映射', () => {
   it('suggestedServiceType 缺失时 type 回落 generic（含 projectType=unknown 的情况）', () => {
     const input = toServiceInput(baseProject({ projectType: 'unknown' }), WS_ID)
     expect(input.type).toBe('generic')
+  })
+
+  it('suggestedRole 缺失时 role 回落 backend', () => {
+    const input = toServiceInput(baseProject(), WS_ID)
+    expect(input.role).toBe('backend')
+  })
+
+  it('suggestedRole 为 frontend 时 role 为 frontend', () => {
+    const input = toServiceInput(baseProject({ suggestedRole: 'frontend' }), WS_ID)
+    expect(input.role).toBe('frontend')
   })
 
   it('args 引用不与原 project 共享，避免 UI 后续改动串味', () => {
@@ -187,6 +199,7 @@ describe('toServiceInput — 与 Zod schema 契约对齐', () => {
     const input = toServiceInput(
       baseProject({
         suggestedServiceType: 'node',
+        suggestedRole: 'backend',
         command: 'npm',
         args: ['run', 'start'],
         packageManager: 'npm',
@@ -212,9 +225,9 @@ describe('toServiceInput — 与 Zod schema 契约对齐', () => {
 describe('toServiceInputs — 批量映射', () => {
   it('顺序与入参一致，且共用同一个 detectedAt', () => {
     const projects = [
-      baseProject({ id: 'p1', name: 'web', path: 'D:/proj/web', suggestedServiceType: 'frontend' }),
-      baseProject({ id: 'p2', name: 'api', path: 'D:/proj/api', suggestedServiceType: 'node' }),
-      baseProject({ id: 'p3', name: 'svc', path: 'D:/proj/svc', suggestedServiceType: 'java' }),
+      baseProject({ id: 'p1', name: 'web', path: 'D:/proj/web', suggestedServiceType: 'frontend', suggestedRole: 'frontend' }),
+      baseProject({ id: 'p2', name: 'api', path: 'D:/proj/api', suggestedServiceType: 'node', suggestedRole: 'backend' }),
+      baseProject({ id: 'p3', name: 'svc', path: 'D:/proj/svc', suggestedServiceType: 'java', suggestedRole: 'backend' }),
     ]
 
     const inputs = toServiceInputs(projects, WS_ID, 1700000000000)
@@ -222,6 +235,7 @@ describe('toServiceInputs — 批量映射', () => {
     expect(inputs.map((i) => i.name)).toEqual(['web', 'api', 'svc'])
     expect(inputs.map((i) => i.cwd)).toEqual(['D:/proj/web', 'D:/proj/api', 'D:/proj/svc'])
     expect(inputs.map((i) => i.type)).toEqual(['frontend', 'node', 'java'])
+    expect(inputs.map((i) => i.role)).toEqual(['frontend', 'backend', 'backend'])
     expect(inputs.every((i) => i.discovery!.lastDetectedAt === 1700000000000)).toBe(true)
   })
 

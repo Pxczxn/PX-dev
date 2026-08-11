@@ -139,6 +139,8 @@ export const DiscoveredProjectSchema = z
     parentProjectId: z.string().max(64).optional(),
     /** 映射后的 Service.type（unknown → 'generic'） */
     suggestedServiceType: z.enum(['frontend', 'node', 'java', 'generic']).optional(),
+    /** 映射后的 Service.role（UI 分组用） */
+    suggestedRole: z.enum(['frontend', 'backend']).optional(),
     /** UI 默认是否勾选 */
     suggestedSelected: z.boolean().optional(),
     // —— Phase 1 必填 ——

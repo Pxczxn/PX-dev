@@ -19,6 +19,7 @@ export {
   collectDependencyNames,
   detectJavaFramework,
   detectNodeFramework,
+  detectServiceRole,
   hasRunnableScript,
   hasSpringBoot,
 } from './FrameworkDetector'

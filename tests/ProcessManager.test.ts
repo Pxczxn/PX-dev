@@ -35,6 +35,7 @@ function makeService(overrides: Partial<Service> = {}): Service {
     workspaceId: 'ws-1',
     name: 'Test Service',
     type: 'node',
+    role: 'backend',
     cwd: tempDir,
     command: 'node',
     args: ['-e', 'console.log("hello"); process.exit(0)'],

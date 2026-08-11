@@ -23,6 +23,7 @@ function baseForm(): Record<string, unknown> {
     workspaceId: 'ws-1',
     name: 'web',
     type: 'frontend',
+    role: 'frontend',
     cwd: 'D:/proj/web',
     command: 'npm',
     args: ['run', 'dev'],

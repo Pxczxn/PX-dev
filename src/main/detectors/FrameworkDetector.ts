@@ -426,3 +426,26 @@ export function hasSpringBoot(content: string, kind: JavaBuildKind): boolean {
     content.includes('org.springframework.boot') || content.includes('spring-boot-gradle-plugin')
   )
 }
+
+/**
+ * 根据框架和项目类型推断 Service.role。
+ *
+ * 规则：
+ * - projectType 为 'frontend' → role = 'frontend'
+ * - framework 为 'spring-boot' → role = 'backend'
+ * - 其余默认 → role = 'backend'
+ *
+ * 注意：此函数只提供推荐值，用户仍可在 ServiceEditDrawer 中手动修正。
+ */
+export function detectServiceRole(
+  framework: string | undefined,
+  projectType: DiscoveryProjectType,
+): 'frontend' | 'backend' {
+  if (projectType === 'frontend') {
+    return 'frontend'
+  }
+  if (framework === 'spring-boot') {
+    return 'backend'
+  }
+  return 'backend'
+}

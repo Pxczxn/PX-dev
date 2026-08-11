@@ -75,6 +75,7 @@ function createFakeConfigManager(): { configManager: ConfigManager; save: Return
         workspaceId: WORKSPACE_ID,
         name: 'Test Service',
         type: 'frontend',
+        role: 'frontend',
         cwd: 'D:\\test',
         command: 'npm',
         args: ['run', 'dev'],

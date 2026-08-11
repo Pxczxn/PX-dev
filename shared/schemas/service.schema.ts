@@ -16,6 +16,7 @@ export const ServiceSchema = z.object({
   workspaceId: z.string().min(1),
   name: z.string().min(1).max(100),
   type: z.enum(['frontend', 'node', 'java', 'generic']),
+  role: z.enum(['frontend', 'backend']),
   cwd: z.string().min(1),
   command: z.string().min(1),
   args: z.array(z.string()).optional(),

@@ -164,6 +164,12 @@ export interface DiscoveredProject {
    */
   suggestedServiceType?: 'frontend' | 'node' | 'java' | 'generic'
   /**
+   * 映射后的 Service.role（UI 分组用）。
+   * 自动检测规则：web/uniapp → frontend, spring-boot → backend。
+   * 仍允许用户手动修正。
+   */
+  suggestedRole?: 'frontend' | 'backend'
+  /**
    * UI 默认是否勾选。
    * Phase 2 规则：`!isLibrary && confidence !== 'low'`；
    * Phase 6 会再叠加 `matchStatus !== 'unchanged'` 条件。
@@ -271,6 +277,7 @@ export interface DiscoveryServiceInput {
   workspaceId: string
   name: string
   type: 'frontend' | 'node' | 'java' | 'generic'
+  role: 'frontend' | 'backend'
   cwd: string
   command: string
   args?: string[]

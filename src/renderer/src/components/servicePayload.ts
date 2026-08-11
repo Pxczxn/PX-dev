@@ -37,6 +37,7 @@ const STRING_FIELDS: ReadonlySet<string> = new Set([
   'workspaceId',
   'name',
   'type',
+  'role',
   'cwd',
   'command',
   'packageManager',

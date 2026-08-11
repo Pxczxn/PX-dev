@@ -10,6 +10,7 @@ import {
   detectJavaFramework,
   detectNodeFramework,
   detectPackageManager,
+  detectServiceRole,
   pickDevScript,
   recommendGradleCommand,
   recommendMavenCommand,
@@ -313,5 +314,33 @@ describe('CommandRecommender — structured 输出', () => {
     // 非 Spring Boot 时的参数保持原有行为
     expect(recommendMavenCommand(plain, false).args).toEqual(['compile', 'exec:java'])
     expect(recommendGradleCommand(plain, false).args).toEqual(['run'])
+  })
+})
+
+describe('detectServiceRole — 角色自动检测', () => {
+  it('projectType=frontend → role=frontend', () => {
+    expect(detectServiceRole('vue', 'frontend')).toBe('frontend')
+    expect(detectServiceRole('react', 'frontend')).toBe('frontend')
+    expect(detectServiceRole('vite', 'frontend')).toBe('frontend')
+    expect(detectServiceRole('next', 'frontend')).toBe('frontend')
+  })
+
+  it('projectType=node → role=backend', () => {
+    expect(detectServiceRole('express', 'node')).toBe('backend')
+    expect(detectServiceRole('nest', 'node')).toBe('backend')
+    expect(detectServiceRole('koa', 'node')).toBe('backend')
+  })
+
+  it('projectType=java 且 framework=spring-boot → role=backend', () => {
+    expect(detectServiceRole('spring-boot', 'java')).toBe('backend')
+  })
+
+  it('projectType=java 且无 spring-boot → role=backend', () => {
+    expect(detectServiceRole(undefined, 'java')).toBe('backend')
+    expect(detectServiceRole('gradle', 'java')).toBe('backend')
+  })
+
+  it('projectType=generic → role=backend', () => {
+    expect(detectServiceRole(undefined, 'generic')).toBe('backend')
   })
 })
