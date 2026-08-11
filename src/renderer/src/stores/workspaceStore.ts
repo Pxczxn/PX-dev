@@ -3,8 +3,13 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import type { Workspace, Service } from '@shared/types'
-import { api } from '@renderer/api'
+import type {
+  Workspace,
+  Service,
+  DiscoveryServiceInput,
+  WorkspaceDiscoveryOptions,
+  WorkspaceDiscoveryResult,
+} from '@shared/types'
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   const workspaces = ref<Workspace[]>([])
@@ -28,6 +33,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   )
 
   async function fetchWorkspaces(): Promise<void> {
+    const { api } = await import('@renderer/api')
     loading.value = true
     try {
       workspaces.value = await api.workspace.list()
@@ -39,6 +45,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function fetchServices(workspaceId?: string): Promise<void> {
+    const { api } = await import('@renderer/api')
     try {
       services.value = await api.service.list(workspaceId)
     } catch (err) {
@@ -47,12 +54,14 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function createWorkspace(input: Record<string, unknown>): Promise<Workspace> {
+    const { api } = await import('@renderer/api')
     const ws = await api.workspace.create(input)
     workspaces.value.push(ws)
     return ws
   }
 
   async function updateWorkspace(input: Record<string, unknown>): Promise<Workspace> {
+    const { api } = await import('@renderer/api')
     const updated = await api.workspace.update(input)
     const idx = workspaces.value.findIndex((w) => w.id === updated.id)
     if (idx !== -1) {
@@ -62,18 +71,21 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function deleteWorkspace(id: string): Promise<void> {
+    const { api } = await import('@renderer/api')
     await api.workspace.delete(id)
     workspaces.value = workspaces.value.filter((w) => w.id !== id)
     services.value = services.value.filter((s) => s.workspaceId !== id)
   }
 
   async function createService(input: Record<string, unknown>): Promise<Service> {
+    const { api } = await import('@renderer/api')
     const svc = await api.service.create(input)
     services.value.push(svc)
     return svc
   }
 
   async function updateService(input: Record<string, unknown>): Promise<Service> {
+    const { api } = await import('@renderer/api')
     const updated = await api.service.update(input)
     const idx = services.value.findIndex((s) => s.id === updated.id)
     if (idx !== -1) {
@@ -83,8 +95,40 @@ export const useWorkspaceStore = defineStore('workspace', () => {
   }
 
   async function deleteService(id: string): Promise<void> {
+    const { api } = await import('@renderer/api')
     await api.service.delete(id)
     services.value = services.value.filter((s) => s.id !== id)
+  }
+
+  /**
+   * 扫描指定根目录，返回发现结果（不落库，仅供 UI 确认）。
+   * 入参会先经 api 层 toPlain() 净化，避免把 Vue Proxy 送过 contextBridge。
+   */
+  async function discover(
+    rootPath: string,
+    options?: WorkspaceDiscoveryOptions,
+    workspaceId?: string,
+  ): Promise<WorkspaceDiscoveryResult> {
+    const { api } = await import('@renderer/api')
+    return await api.workspace.discover({
+      rootPath,
+      ...(workspaceId ? { workspaceId } : {}),
+      ...(options ? { options } : {}),
+    })
+  }
+
+  /** 批量把发现结果创建为 Service，并同步进本地列表 */
+  async function applyDiscovery(
+    workspaceId: string,
+    inputs: DiscoveryServiceInput[],
+  ): Promise<Service[]> {
+    const { api } = await import('@renderer/api')
+    const created = await api.workspace.applyDiscovery({
+      workspaceId,
+      services: inputs,
+    })
+    services.value.push(...created)
+    return created
   }
 
   function getWorkspace(id: string): Workspace | undefined {
@@ -113,6 +157,8 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     createService,
     updateService,
     deleteService,
+    discover,
+    applyDiscovery,
     getWorkspace,
     getService,
     getServicesByWorkspace,

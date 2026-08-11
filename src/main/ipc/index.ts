@@ -10,6 +10,7 @@ import type { LogManager } from '../managers/LogManager'
 import type { PortManager } from '../managers/PortManager'
 import type { WorkspaceManager } from '../managers/WorkspaceManager'
 import type { EnvironmentManager } from '../managers/EnvironmentManager'
+import type { WorkspaceDiscoveryManager, RuntimeEndpointRegistry } from '../discovery'
 import { ScannerRegistry } from '../scanners'
 
 import { registerWorkspaceHandlers } from './workspace.ipc'
@@ -19,6 +20,7 @@ import { registerEnvironmentHandlers } from './environment.ipc'
 import { registerPortHandlers } from './port.ipc'
 import { registerSystemHandlers } from './system.ipc'
 import { registerAppHandlers } from './app.ipc'
+import { registerDiscoveryHandlers } from './discovery.ipc'
 
 // ============ Utility: Custom IPC Error ============
 export class IpcError extends Error {
@@ -55,6 +57,10 @@ export interface ManagerContainer {
   workspaceManager: WorkspaceManager
   environmentManager: EnvironmentManager
   scannerRegistry: ScannerRegistry
+  /** Workspace Discovery（Phase 3 接入 IPC） */
+  discoveryManager: WorkspaceDiscoveryManager
+  /** 运行时端点注册表（Phase 5，纯内存；缺省时运行时端点功能整体降级为不可用） */
+  runtimeEndpointRegistry?: RuntimeEndpointRegistry
 }
 
 /**
@@ -71,20 +77,31 @@ export function registerAllHandlers(
     onMinimize: () => void
   },
 ): void {
-  const { configManager, processManager, logManager, portManager, workspaceManager, environmentManager, scannerRegistry } = managers
+  const { configManager, processManager, logManager, portManager, workspaceManager, environmentManager, scannerRegistry, discoveryManager, runtimeEndpointRegistry } = managers
 
   // Set up LogManager sender for log:batch events
   logManager.setSender(sender)
   logManager.startFlushTimer()
 
+  // Phase 5：运行时端点注册表接线
+  // - Configured 端口只读取、绝不回写（Runtime 永不覆盖 Configured）
+  // - attach 内部会先 detach，重复调用不会造成重复订阅
+  if (runtimeEndpointRegistry) {
+    runtimeEndpointRegistry.setConfiguredPortResolver(
+      (serviceId) => workspaceManager.getService(serviceId)?.port,
+    )
+    runtimeEndpointRegistry.attach(logManager, sender)
+  }
+
   // Register each domain
-  registerWorkspaceHandlers(workspaceManager)
-  registerServiceHandlers(processManager, workspaceManager, sender)
+  registerWorkspaceHandlers(workspaceManager, runtimeEndpointRegistry)
+  registerServiceHandlers(processManager, workspaceManager, sender, runtimeEndpointRegistry)
   registerLogHandlers(logManager)
   registerEnvironmentHandlers(environmentManager)
   registerPortHandlers(portManager)
   registerSystemHandlers(scannerRegistry)
   registerAppHandlers(configManager, workspaceManager, callbacks.onQuit, callbacks.onMinimize)
+  registerDiscoveryHandlers(discoveryManager, workspaceManager)
 }
 
 // Re-export IPC_CHANNELS for convenience

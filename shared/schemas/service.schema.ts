@@ -1,6 +1,7 @@
 // PX Dev — Service Zod Schema
 
 import { z } from 'zod'
+import { ServiceDiscoveryMetaSchema } from './discovery.schema'
 
 export const HealthCheckConfigSchema = z.object({
   type: z.enum(['none', 'port', 'http']),
@@ -29,6 +30,8 @@ export const ServiceSchema = z.object({
   openUrl: z.string().url().optional(),
   healthCheck: HealthCheckConfigSchema.optional(),
   shellMode: z.boolean().optional(),
+  /** 发现元数据（可选）；手动创建 / 旧配置的 Service 不含该字段 */
+  discovery: ServiceDiscoveryMetaSchema.optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 })

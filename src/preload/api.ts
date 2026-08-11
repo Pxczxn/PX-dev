@@ -12,6 +12,9 @@ import type {
   PortOwner,
   ScanResult,
   Settings,
+  DiscoveredProject,
+  WorkspaceDiscoveryResult,
+  RuntimeEndpointSnapshot,
 } from '@shared/types'
 
 // ============ API Definition ============
@@ -22,6 +25,12 @@ export interface PxDevAPI {
     create: (input: Record<string, unknown>) => Promise<Workspace>
     update: (input: Record<string, unknown>) => Promise<Workspace>
     delete: (id: string) => Promise<{ success: boolean }>
+    /** 扫描根目录，返回发现结果（Phase 3） */
+    discover: (input: Record<string, unknown>) => Promise<WorkspaceDiscoveryResult>
+    /** 把勾选的发现结果批量创建为 Service（Phase 3） */
+    applyDiscovery: (input: Record<string, unknown>) => Promise<Service[]>
+    /** Phase 6：拉取运行时端点快照（纯内存，窗口刷新后兜底） */
+    getRuntimeEndpoints: (input?: Record<string, unknown>) => Promise<RuntimeEndpointSnapshot[]>
   }
   // Service CRUD
   service: {
@@ -68,6 +77,8 @@ export interface PxDevAPI {
     selectDirectory: () => Promise<string | null>
     scanDirectory: (path: string) => Promise<ScanResult>
     showItemInFolder: (path: string) => Promise<{ success: boolean }>
+    /** 单目录轻量检测；未命中项目标记文件时返回 null（Phase 3） */
+    detectProject: (path: string) => Promise<DiscoveredProject | null>
   }
   // App
   app: {
@@ -81,6 +92,8 @@ export interface PxDevAPI {
   events: {
     onLogBatch: (callback: (payload: { serviceId: string; entries: LogEntry[] }) => void) => () => void
     onRuntimeChanged: (callback: (payload: { serviceId: string; runtime: ProcessRuntime }) => void) => () => void
+    /** Phase 6：运行时端点变更事件（M→R，节流 500ms） */
+    onRuntimeEndpoints: (callback: (payload: { serviceId: string; runtime: RuntimeEndpointSnapshot | null }) => void) => () => void
   }
 }
 
@@ -92,6 +105,11 @@ export function createPxDevAPI(): PxDevAPI {
       create: (input) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_CREATE, input),
       update: (input) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_UPDATE, input),
       delete: (id) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_DELETE, { id }),
+      discover: (input) => ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_DISCOVER, input),
+      applyDiscovery: (input) =>
+        ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_APPLY_DISCOVERY, input),
+      getRuntimeEndpoints: (input) =>
+        ipcRenderer.invoke(IPC_CHANNELS.WORKSPACE_RUNTIME_ENDPOINTS, input ?? {}),
     },
     service: {
       list: (workspaceId) =>
@@ -140,6 +158,7 @@ export function createPxDevAPI(): PxDevAPI {
       selectDirectory: () => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_SELECT_DIRECTORY),
       scanDirectory: (path) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_SCAN_DIRECTORY, { path }),
       showItemInFolder: (path) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_SHOW_ITEM, { path }),
+      detectProject: (path) => ipcRenderer.invoke(IPC_CHANNELS.SYSTEM_DETECT_PROJECT, { path }),
     },
     app: {
       getSettings: () => ipcRenderer.invoke(IPC_CHANNELS.APP_GET_SETTINGS),
@@ -165,6 +184,16 @@ export function createPxDevAPI(): PxDevAPI {
         ipcRenderer.on(IPC_CHANNELS.SERVICE_RUNTIME_CHANGED_EVENT, handler)
         return () => {
           ipcRenderer.removeListener(IPC_CHANNELS.SERVICE_RUNTIME_CHANGED_EVENT, handler)
+        }
+      },
+      onRuntimeEndpoints: (callback) => {
+        const handler = (
+          _event: unknown,
+          payload: { serviceId: string; runtime: RuntimeEndpointSnapshot | null },
+        ) => callback(payload)
+        ipcRenderer.on(IPC_CHANNELS.RUNTIME_ENDPOINTS_EVENT, handler)
+        return () => {
+          ipcRenderer.removeListener(IPC_CHANNELS.RUNTIME_ENDPOINTS_EVENT, handler)
         }
       },
     },

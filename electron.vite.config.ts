@@ -50,6 +50,10 @@ export default defineConfig({
       },
     },
     plugins: [vue()],
+    server: {
+      port: 5173,
+      strictPort: true,
+    },
     css: {
       preprocessorOptions: {
         scss: {

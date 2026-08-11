@@ -16,7 +16,7 @@ import type {
 import { VALID_TRANSITIONS, ERROR_CODES } from '@shared/constants/status'
 import { LogManager } from './LogManager'
 import type { PortManager } from './PortManager'
-import { buildCommand } from '../utils/command'
+import { buildCommand, type BuiltCommand } from '../utils/command'
 import { runHealthCheck } from '../utils/health'
 import { logger } from '../utils/logger'
 
@@ -27,6 +27,37 @@ export class ProcessError extends Error {
     super(message)
     this.code = code
     this.name = 'ProcessError'
+  }
+}
+
+/**
+ * 把 spawn 抛出的底层 errno 翻译成可操作的中文提示。
+ *
+ * 裸的 `spawn EINVAL` / `spawn ENOENT` 对用户毫无指导意义，
+ * 这里针对最常见的三类失败给出明确的排查方向。
+ *
+ * @param err        spawn 抛出的错误（可能带 errno code）
+ * @param executable 实际传给 spawn 的可执行文件
+ * @param shell      本次是否启用了 shell
+ */
+export function describeSpawnError(
+  err: NodeJS.ErrnoException,
+  executable: string,
+  shell: boolean,
+): string {
+  switch (err.code) {
+    case 'ENOENT':
+      return `找不到命令 "${executable}"：请确认它已安装且在 PATH 中，或在服务配置里填写完整路径`
+    case 'EINVAL':
+      // Windows 下 .cmd/.bat 必须走 shell（Node CVE-2024-27980 缓解措施）
+      return (
+        `启动命令失败（EINVAL）: "${executable}" 无法以 shell=${shell} 的方式启动。` +
+        'Windows 上的 .cmd / .bat 脚本必须通过 shell 启动，请在服务配置中开启「Shell 模式」后重试'
+      )
+    case 'EACCES':
+      return `没有执行权限: "${executable}"，请检查文件权限或以管理员身份运行`
+    default:
+      return `启动命令失败: ${err.message}`
   }
 }
 
@@ -69,7 +100,16 @@ export class ProcessManager {
     }
 
     // 1. Validate cwd
-    const cwd = resolve(service.cwd)
+    // 配置损坏或用户清空时 cwd 可能是 undefined/空串，resolve() 会直接抛 TypeError，
+    // 因此先做显式校验，转成带错误码的 ProcessError。
+    const rawCwd = typeof service.cwd === 'string' ? service.cwd.trim() : ''
+    if (rawCwd === '') {
+      throw new ProcessError(
+        ERROR_CODES.CWD_NOT_FOUND,
+        `服务 ${service.name} 未配置工作目录`,
+      )
+    }
+    const cwd = resolve(rawCwd)
     if (!existsSync(cwd)) {
       throw new ProcessError(
         ERROR_CODES.CWD_NOT_FOUND,
@@ -91,7 +131,15 @@ export class ProcessManager {
     }
 
     // 3. Build spawn options
-    const { executable, args, options } = buildCommand(service)
+    // buildCommand 会在命令为空时抛普通 Error，统一转成带错误码的 ProcessError，
+    // 避免 IPC 层拿到一个没有 code 的裸错误。
+    let built: BuiltCommand
+    try {
+      built = buildCommand(service)
+    } catch (err) {
+      throw new ProcessError(ERROR_CODES.VALIDATION_ERROR, (err as Error).message)
+    }
+    const { executable, args, options } = built
     options.cwd = cwd
 
     // 4. Initialize runtime + managed process
@@ -111,6 +159,11 @@ export class ProcessManager {
     this.transition(service.id, 'starting')
 
     // 5. Spawn
+    // 记录完整 spawn 参数：EINVAL / ENOENT 这类错误没有上下文时极难定位
+    logger.info(
+      `Spawning ${service.name}: executable=${executable}, ` +
+        `args=${JSON.stringify(args)}, cwd=${options.cwd}, shell=${options.shell}`,
+    )
     try {
       const child = spawn(executable, args, options)
       managed.child = child
@@ -140,12 +193,14 @@ export class ProcessManager {
         }
       })
     } catch (err) {
-      managed.runtime.error = (err as Error).message
+      // spawn 对 EINVAL / EACCES 等错误是**同步抛出**的（只有 ENOENT 等少数会走 error 事件），
+      // 这里翻译成可操作的中文提示，并保留原始 errno 到日志便于排查。
+      const errno = err as NodeJS.ErrnoException
+      const detail = describeSpawnError(errno, executable, options.shell)
+      logger.error(`Spawn failed for ${service.name} [${errno.code ?? 'UNKNOWN'}]: ${errno.message}`)
+      managed.runtime.error = detail
       this.transition(service.id, 'failed')
-      throw new ProcessError(
-        ERROR_CODES.COMMAND_NOT_FOUND,
-        `启动命令失败: ${(err as Error).message}`,
-      )
+      throw new ProcessError(ERROR_CODES.COMMAND_NOT_FOUND, detail)
     }
 
     // 9. Health check → running

@@ -2,6 +2,7 @@
 // All channel name string constants (re-exported from constants for type safety)
 
 import type { ProcessRuntime, LogEntry } from './index'
+import type { RuntimeEndpointSnapshot } from './discovery'
 
 // ============ IPC Channel Names (type-level) ============
 export const IPC_CHANNELS = {
@@ -10,6 +11,12 @@ export const IPC_CHANNELS = {
   WORKSPACE_CREATE: 'workspace:create',
   WORKSPACE_UPDATE: 'workspace:update',
   WORKSPACE_DELETE: 'workspace:delete',
+  /** 扫描工作区根目录，返回 WorkspaceDiscoveryResult */
+  WORKSPACE_DISCOVER: 'workspace:discover',
+  /** 把勾选的发现结果批量创建为 Service（单次落盘） */
+  WORKSPACE_APPLY_DISCOVERY: 'workspace:applyDiscovery',
+  /** 拉取运行时端点快照（纯内存；窗口刷新后事件丢失的兜底） */
+  WORKSPACE_RUNTIME_ENDPOINTS: 'workspace:runtimeEndpoints',
 
   // Service
   SERVICE_LIST: 'service:list',
@@ -51,6 +58,8 @@ export const IPC_CHANNELS = {
   SYSTEM_SELECT_DIRECTORY: 'system:selectDirectory',
   SYSTEM_SCAN_DIRECTORY: 'system:scanDirectory',
   SYSTEM_SHOW_ITEM: 'system:showItemInFolder',
+  /** 单目录轻量检测，返回 DiscoveredProject | null */
+  SYSTEM_DETECT_PROJECT: 'system:detectProject',
 
   // App
   APP_GET_SETTINGS: 'app:getSettings',
@@ -61,6 +70,8 @@ export const IPC_CHANNELS = {
 
   // Runtime event (M→R)
   SERVICE_RUNTIME_CHANGED_EVENT: 'service:runtime:changed',
+  /** 运行时端点变更事件（M→R，Phase 5） */
+  RUNTIME_ENDPOINTS_EVENT: 'runtime:endpoints',
 } as const
 
 export type IpcChannelName = (typeof IPC_CHANNELS)[keyof typeof IPC_CHANNELS]
@@ -74,4 +85,13 @@ export interface RuntimeChangedPayload {
 export interface LogBatchPayload {
   serviceId: string
   entries: LogEntry[]
+}
+
+/**
+ * `runtime:endpoints` 事件 payload（Phase 5）。
+ * runtime === null 表示该服务已停止 / 正在重启，渲染层应清空展示。
+ */
+export interface RuntimeEndpointsEventPayload {
+  serviceId: string
+  runtime: RuntimeEndpointSnapshot | null
 }

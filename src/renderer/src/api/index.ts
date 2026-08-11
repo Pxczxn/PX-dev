@@ -16,9 +16,22 @@
 // 且该异常发生在**跨 bridge 的瞬间**，preload 里的 ipcRenderer.invoke 根本来不及执行，
 // 因此净化只能、且必须发生在渲染进程主世界调用 window.pxDev 之前。
 //
-// 历史教训：早期靠「每个方法记得手写 toPlain()」来防守，只要新增或漏掉一个方法
-// 就会重新引入同一个 bug。现在改为在 getApi() 出口处统一拦截（createGuardedProxy），
+// 历史教训 1：早期靠「每个方法记得手写 toPlain()」来防守，只要新增或漏掉一个方法
+// 就会重新引入同一个 bug。现在改为在 getApi() 出口处统一拦截，
 // 任何方法（含未来新增的）的任何入参都会被自动净化，不再依赖人为记忆。
+//
+// 历史教训 2（⚠️ 切勿用 Proxy 实现该守卫）：
+// contextBridge.exposeInMainWorld 注入主世界的 window.pxDev 是**深度冻结**的，
+// 每个属性都是 `writable: false, configurable: false` 的数据属性。
+// 而 ES 规范对 Proxy 有硬性不变式：当目标属性「不可写且不可配置」时，
+// get 陷阱**必须**返回与目标完全相同的值（SameValue），否则 V8 直接抛：
+//   TypeError: 'get' on proxy: property 'system' is a read-only and
+//   non-configurable data property on the proxy target but the proxy
+//   did not return its actual value
+// 守卫的职责恰恰是返回「包装后的函数 / 子命名空间」，必然违反该不变式。
+// 更糟的是：异常在**读取 api.xxx 属性的瞬间同步抛出**，调用根本活不到 IPC 层，
+// 表现为所有 api 调用瞬间失败（曾导致「浏览」按钮连点刷出多条「选择目录失败」）。
+// 因此这里改为一次性构建**普通对象镜像**：结构固定、不受 Proxy 不变式约束。
 
 import type { LogEntry, ProcessRuntime } from '@shared/types'
 import type { PxDevAPI } from '../../../preload/api'
@@ -35,30 +48,52 @@ function sanitizeArg(arg: unknown): unknown {
 }
 
 /**
- * 递归包裹 contextBridge 命名空间，使其所有方法在调用前自动净化入参。
+ * 递归构建 contextBridge 命名空间的「净化镜像」，使其所有方法在调用前自动净化入参。
  *
- * 该 Proxy 只存在于渲染进程主世界、用于拦截调用，本身不会跨进程传递；
- * 真正送出去的永远是 toPlain() 产出的纯数据。
+ * 实现要点：
+ * 1. 返回的是**普通对象**而非 Proxy —— contextBridge 暴露的对象被深度冻结，
+ *    Proxy 的 get 陷阱无法合法地返回包装值（详见文件头「历史教训 2」）；
+ * 2. 镜像只在 bridge 实例变化时构建一次（见 getApi 的缓存），开销可忽略；
+ * 3. 镜像只存在于渲染进程主世界、用于拦截调用，本身不会跨进程传递；
+ *    真正送出去的永远是 toPlain() 产出的纯数据。
+ *
+ * @param target 待镜像的 contextBridge 对象（根对象或子命名空间）
+ * @param seen   循环引用缓存，防御性保护，避免异常结构导致无限递归
  */
-function createGuardedProxy<T extends object>(target: T): T {
-  return new Proxy(target, {
-    get(obj, prop, receiver): unknown {
-      const value = Reflect.get(obj, prop, receiver)
+function createGuardedMirror<T extends object>(
+  target: T,
+  seen: WeakMap<object, unknown> = new WeakMap(),
+): T {
+  const cached = seen.get(target)
+  if (cached !== undefined) {
+    return cached as T
+  }
 
-      if (typeof value === 'function') {
-        const fn = value as (...args: unknown[]) => unknown
-        // 绑定原命名空间对象，避免 contextBridge 代理方法丢失 this
-        return (...args: unknown[]): unknown => fn.apply(obj, args.map(sanitizeArg))
-      }
+  const mirror: Record<string | symbol, unknown> = {}
+  seen.set(target, mirror)
 
-      // 嵌套命名空间（workspace / service / process ...）继续下沉包裹
-      if (value !== null && typeof value === 'object') {
-        return createGuardedProxy(value as object)
-      }
+  const source = target as unknown as Record<string | symbol, unknown>
 
-      return value
-    },
-  })
+  for (const key of Reflect.ownKeys(target)) {
+    const value = source[key]
+
+    if (typeof value === 'function') {
+      const fn = value as (...args: unknown[]) => unknown
+      // 绑定原命名空间对象，避免 contextBridge 代理方法丢失 this
+      mirror[key] = (...args: unknown[]): unknown => fn.apply(target, args.map(sanitizeArg))
+      continue
+    }
+
+    // 嵌套命名空间（workspace / service / process ...）继续下沉镜像
+    if (value !== null && typeof value === 'object') {
+      mirror[key] = createGuardedMirror(value as object, seen)
+      continue
+    }
+
+    mirror[key] = value
+  }
+
+  return mirror as T
 }
 
 /** Safe API accessor — returns null if not available (for guards) */
@@ -69,7 +104,7 @@ function tryGetApi(): PxDevAPI | null {
   return null
 }
 
-// 缓存包裹结果，避免每次调用都重建 Proxy 链
+// 缓存镜像结果，避免每次调用都重建整棵命名空间树
 let rawApiRef: PxDevAPI | null = null
 let guardedApiRef: PxDevAPI | null = null
 
@@ -81,9 +116,10 @@ function getApi(): PxDevAPI {
     throw new Error('window.pxDev is not available. Ensure preload script is loaded.')
   }
 
+  // bridge 实例变化时（如窗口重载后 preload 重新注入）重建镜像
   if (rawApiRef !== raw || !guardedApiRef) {
     rawApiRef = raw
-    guardedApiRef = createGuardedProxy(raw)
+    guardedApiRef = createGuardedMirror(raw)
   }
 
   return guardedApiRef
@@ -96,6 +132,11 @@ export const api = {
     create: (input: Record<string, unknown>) => getApi().workspace.create(toPlain(input)),
     update: (input: Record<string, unknown>) => getApi().workspace.update(toPlain(input)),
     delete: (id: string) => getApi().workspace.delete(id),
+    discover: (input: Record<string, unknown>) => getApi().workspace.discover(toPlain(input)),
+    applyDiscovery: (input: Record<string, unknown>) =>
+      getApi().workspace.applyDiscovery(toPlain(input)),
+    getRuntimeEndpoints: (input?: Record<string, unknown>) =>
+      getApi().workspace.getRuntimeEndpoints(input ? toPlain(input) : undefined),
   },
   service: {
     list: (workspaceId?: string) => getApi().service.list(workspaceId),
@@ -137,6 +178,7 @@ export const api = {
     selectDirectory: () => getApi().system.selectDirectory(),
     scanDirectory: (path: string) => getApi().system.scanDirectory(path),
     showItemInFolder: (path: string) => getApi().system.showItemInFolder(path),
+    detectProject: (path: string) => getApi().system.detectProject(path),
   },
   app: {
     getSettings: () => getApi().app.getSettings(),
@@ -151,6 +193,9 @@ export const api = {
     onRuntimeChanged: (
       cb: (payload: { serviceId: string; runtime: ProcessRuntime }) => void,
     ) => getApi().events.onRuntimeChanged(cb),
+    onRuntimeEndpoints: (
+      cb: (payload: { serviceId: string; runtime: unknown }) => void,
+    ) => getApi().events.onRuntimeEndpoints(cb),
   },
   /** Check if API is available (guard for early render) */
   isAvailable: () => tryGetApi() !== null,

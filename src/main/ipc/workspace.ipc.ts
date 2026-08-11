@@ -1,4 +1,6 @@
 // PX Dev — Workspace IPC Handlers
+//
+// Phase 6 新增：workspace:runtimeEndpoints 查询运行时端点快照（纯内存）。
 
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '@shared/constants/ipc-channels'
@@ -11,10 +13,18 @@ import {
   UpdateServiceSchema,
   DeleteServiceSchema,
 } from '@shared/schemas/ipc.schema'
+import {
+  RuntimeEndpointSnapshotListSchema,
+  RuntimeEndpointsQuerySchema,
+} from '@shared/schemas/discovery.schema'
 import type { WorkspaceManager } from '../managers/WorkspaceManager'
+import type { RuntimeEndpointRegistry } from '../discovery'
 import { validate } from './index'
 
-export function registerWorkspaceHandlers(wm: WorkspaceManager): void {
+export function registerWorkspaceHandlers(
+  wm: WorkspaceManager,
+  endpointRegistry?: RuntimeEndpointRegistry,
+): void {
   // workspace:list
   ipcMain.handle(IPC_CHANNELS.WORKSPACE_LIST, async () => {
     return wm.listWorkspaces()
@@ -65,4 +75,22 @@ export function registerWorkspaceHandlers(wm: WorkspaceManager): void {
     wm.deleteService(data.id)
     return { success: true }
   })
+
+  // workspace:runtimeEndpoints — Phase 6
+  // 传 serviceId 则返回该服务的快照；不传返回全部（窗口刷新后兜底拉取）
+  ipcMain.handle(
+    IPC_CHANNELS.WORKSPACE_RUNTIME_ENDPOINTS,
+    async (_event, input: unknown) => {
+      const data = validate(RuntimeEndpointsQuerySchema, input)
+      if (!endpointRegistry) return []
+
+      if (data?.serviceId) {
+        const snapshot = endpointRegistry.getSnapshot(data.serviceId)
+        return RuntimeEndpointSnapshotListSchema.parse(snapshot ? [snapshot] : [])
+      }
+      return RuntimeEndpointSnapshotListSchema.parse(
+        endpointRegistry.getAllSnapshots(),
+      )
+    },
+  )
 }

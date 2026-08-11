@@ -8,6 +8,23 @@ import { logger } from '../utils/logger'
 /** Type for the sender function that pushes events to renderer */
 export type LogBatchSender = (channel: string, payload: unknown) => void
 
+/**
+ * 一次 flush 中派发给「批次监听器」的通知（Phase 5 新增）。
+ * 形状与 `LOG_BATCH_EVENT` 的 payload 一致，便于监听器直接复用。
+ *
+ * ⚠️ `entries` 与推送给渲染层的是同一个数组引用，监听器必须**只读**。
+ */
+export interface LogBatchNotice {
+  serviceId: string
+  entries: LogEntry[]
+}
+
+/**
+ * 批次监听器（Phase 5：RuntimeEndpointRegistry 的接入点）。
+ * 必须是**同步 + 快速**的：它运行在 80ms flush 定时器的调用栈上。
+ */
+export type LogBatchListener = (notice: LogBatchNotice) => void
+
 interface ServiceBuffer {
   entries: LogEntry[]
   /** Pending entries not yet flushed */
@@ -21,6 +38,8 @@ export class LogManager {
   private flushTimer: ReturnType<typeof setInterval> | null = null
   private flushIntervalMs: number = 80
   private sender: LogBatchSender | null = null
+  /** Phase 5 追加：批次监听器集合（不影响既有推送逻辑） */
+  private batchListeners: Set<LogBatchListener> = new Set()
 
   constructor(maxLines = 5000) {
     this.maxLines = maxLines
@@ -111,9 +130,35 @@ export class LogManager {
       .join('\n')
   }
 
+  /**
+   * 注册批次监听器（Phase 5 追加）。
+   *
+   * 监听器在 `flush()` 末尾、**日志已推送给渲染层之后**被同步调用，
+   * 每个监听器独立 try/catch，抛错既不影响日志推送也不影响其他监听器。
+   *
+   * @returns 取消订阅函数（等价于 `removeBatchListener(listener)`）
+   */
+  addBatchListener(listener: LogBatchListener): () => void {
+    this.batchListeners.add(listener)
+    return () => this.removeBatchListener(listener)
+  }
+
+  /** 移除批次监听器（幂等） */
+  removeBatchListener(listener: LogBatchListener): void {
+    this.batchListeners.delete(listener)
+  }
+
+  /** 当前批次监听器数量（诊断 / 测试用） */
+  getBatchListenerCount(): number {
+    return this.batchListeners.size
+  }
+
   /** Flush pending entries to all subscribers via sender */
   private flush(): void {
     if (!this.sender) return
+
+    // Phase 5：记录本轮实际推送出去的批次，供 flush 末尾派发给监听器
+    const dispatched: LogBatchNotice[] = []
 
     for (const serviceId of this.subscribers) {
       const buf = this.buffers.get(serviceId)
@@ -126,6 +171,33 @@ export class LogManager {
         serviceId,
         entries,
       })
+
+      dispatched.push({ serviceId, entries })
+    }
+
+    // 日志推送已全部完成，此后监听器无论怎么炸都影响不到渲染层
+    this.notifyBatchListeners(dispatched)
+  }
+
+  /**
+   * 把本轮批次同步派发给所有监听器。
+   * 逐个 try/catch 隔离：任一监听器抛错都被吞掉并记录，后续监听器照常执行。
+   */
+  private notifyBatchListeners(batches: LogBatchNotice[]): void {
+    if (this.batchListeners.size === 0 || batches.length === 0) return
+
+    // 快照一份，避免监听器在回调里增删集合导致迭代异常
+    const listeners = [...this.batchListeners]
+    for (const notice of batches) {
+      for (const listener of listeners) {
+        try {
+          listener(notice)
+        } catch (err) {
+          logger.error(
+            `LogManager batch listener failed (${notice.serviceId}): ${(err as Error).message}`,
+          )
+        }
+      }
     }
   }
 

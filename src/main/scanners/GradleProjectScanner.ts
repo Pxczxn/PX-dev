@@ -1,9 +1,12 @@
 // PX Dev — Gradle Project Scanner
 // Detects build.gradle(.kts) + gradlew, recommends bootRun
+//
+// Phase 2 起：Spring Boot 判定与命令推荐委托 src/main/detectors 下的纯函数原语。
 
-import { existsSync, readFileSync } from 'fs'
+import { existsSync } from 'fs'
 import { join } from 'path'
 import type { ScanResult } from '@shared/types'
+import { detectJavaFramework, detectStaticPort, recommendGradleCommand } from '../detectors'
 import type { ProjectScanner } from './index'
 
 export class GradleProjectScanner implements ProjectScanner {
@@ -16,25 +19,10 @@ export class GradleProjectScanner implements ProjectScanner {
   }
 
   scan(dirPath: string): ScanResult {
-    const hasGradlew = existsSync(join(dirPath, 'gradlew'))
-    const isSpringBoot = this.checkSpringBoot(dirPath)
-
-    let command: string
-    let args: string[]
-
-    if (hasGradlew) {
-      command = './gradlew'
-    } else {
-      command = 'gradle'
-    }
-
-    if (isSpringBoot) {
-      args = ['bootRun']
-    } else {
-      args = ['run']
-    }
-
-    const detectedPort = this.detectPort(dirPath)
+    const frameworkDetection = detectJavaFramework(dirPath, 'gradle')
+    const isSpringBoot = frameworkDetection.framework === 'spring-boot'
+    const { command, args } = recommendGradleCommand(dirPath, isSpringBoot)
+    const detectedPort = this.detectPort(dirPath, frameworkDetection.framework, args)
 
     return {
       path: dirPath,
@@ -42,55 +30,28 @@ export class GradleProjectScanner implements ProjectScanner {
       recommendedCommand: command,
       recommendedArgs: args,
       detectedPort,
+      // —— Phase 2 增强字段（packageManager 留空的原因见 MavenProjectScanner 注释）——
+      framework: frameworkDetection.framework,
+      projectType: frameworkDetection.projectType,
+      isLibrary: frameworkDetection.isLibrary,
+      evidence: frameworkDetection.evidence,
+      configFiles: frameworkDetection.configFiles,
+      confidence: isSpringBoot ? 'high' : 'medium',
     }
   }
 
-  /** Check if build.gradle contains spring-boot plugin */
-  private checkSpringBoot(dirPath: string): boolean {
-    const files = ['build.gradle', 'build.gradle.kts']
-    for (const file of files) {
-      const filePath = join(dirPath, file)
-      if (existsSync(filePath)) {
-        try {
-          const content = readFileSync(filePath, 'utf-8')
-          if (
-            content.includes('org.springframework.boot') ||
-            content.includes('spring-boot-gradle-plugin')
-          ) {
-            return true
-          }
-        } catch {
-          // ignore
-        }
-      }
-    }
-    return false
-  }
-
-  /** Detect port from application.properties/yml */
-  private detectPort(dirPath: string): number | undefined {
-    const propFiles = [
-      'src/main/resources/application.properties',
-      'src/main/resources/application.yml',
-      'src/main/resources/application.yaml',
-    ]
-
-    for (const file of propFiles) {
-      const filePath = join(dirPath, file)
-      if (existsSync(filePath)) {
-        try {
-          const content = readFileSync(filePath, 'utf-8')
-          const propMatch = content.match(/server\.port\s*[=:]\s*(\d+)/)
-          if (propMatch) return parseInt(propMatch[1], 10)
-
-          const yamlMatch = content.match(/port:\s*(\d+)/)
-          if (yamlMatch) return parseInt(yamlMatch[1], 10)
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    return 8080
+  /** 端口探测：Phase 4 起**完全委托** PortDetector（细节见 MavenProjectScanner.detectPort 注释） */
+  private detectPort(
+    dirPath: string,
+    framework: string | undefined,
+    args: string[],
+  ): number | undefined {
+    return detectStaticPort({
+      rootPath: dirPath,
+      command: 'gradle',
+      args,
+      framework,
+      projectType: 'java',
+    })
   }
 }

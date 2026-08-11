@@ -5,7 +5,6 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { PortOwner } from '@shared/types'
 import { COMMON_PORTS } from '@shared/constants/defaults'
-import { api } from '@renderer/api'
 
 interface PortCheckResult {
   port: number
@@ -21,6 +20,7 @@ export const usePortStore = defineStore('port', () => {
   async function checkCommonPorts(): Promise<void> {
     checking.value = true
     try {
+      const { api } = await import('@renderer/api')
       const promises = COMMON_PORTS.map(async (port) => {
         try {
           const { available } = await api.port.check(port)
@@ -43,6 +43,7 @@ export const usePortStore = defineStore('port', () => {
 
   /** Check a single port */
   async function checkPort(port: number): Promise<PortCheckResult> {
+    const { api } = await import('@renderer/api')
     const { available } = await api.port.check(port)
     let owner: PortOwner | null = null
     if (!available) {
@@ -65,6 +66,7 @@ export const usePortStore = defineStore('port', () => {
   /** Kill process by PID */
   async function killProcess(pid: number): Promise<boolean> {
     try {
+      const { api } = await import('@renderer/api')
       const { success } = await api.port.kill(pid)
       if (success) {
         // Refresh affected ports

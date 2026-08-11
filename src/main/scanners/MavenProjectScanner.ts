@@ -1,9 +1,12 @@
 // PX Dev — Maven Project Scanner
 // Detects pom.xml + mvnw, recommends spring-boot:run
+//
+// Phase 2 起：Spring Boot 判定与命令推荐委托 src/main/detectors 下的纯函数原语。
 
-import { existsSync, readFileSync } from 'fs'
+import { existsSync } from 'fs'
 import { join } from 'path'
 import type { ScanResult } from '@shared/types'
+import { detectJavaFramework, detectStaticPort, recommendMavenCommand } from '../detectors'
 import type { ProjectScanner } from './index'
 
 export class MavenProjectScanner implements ProjectScanner {
@@ -13,25 +16,10 @@ export class MavenProjectScanner implements ProjectScanner {
   }
 
   scan(dirPath: string): ScanResult {
-    const hasMvnw = existsSync(join(dirPath, 'mvnw'))
-    const isSpringBoot = this.checkSpringBoot(dirPath)
-
-    let command: string
-    let args: string[]
-
-    if (hasMvnw) {
-      command = './mvnw'
-    } else {
-      command = 'mvn'
-    }
-
-    if (isSpringBoot) {
-      args = ['spring-boot:run']
-    } else {
-      args = ['compile', 'exec:java']
-    }
-
-    const detectedPort = this.detectPort(dirPath)
+    const frameworkDetection = detectJavaFramework(dirPath, 'maven')
+    const isSpringBoot = frameworkDetection.framework === 'spring-boot'
+    const { command, args } = recommendMavenCommand(dirPath, isSpringBoot)
+    const detectedPort = this.detectPort(dirPath, frameworkDetection.framework, args)
 
     return {
       path: dirPath,
@@ -39,46 +27,35 @@ export class MavenProjectScanner implements ProjectScanner {
       recommendedCommand: command,
       recommendedArgs: args,
       detectedPort,
+      // —— Phase 2 增强字段 ——
+      // 注意：packageManager 刻意留空。ScanResult.packageManager 会被 ServiceEditDrawer
+      // 直接回填到 Service.packageManager（枚举仅含 npm/pnpm/yarn/bun/custom），
+      // 写入 'maven' 会导致保存校验失败；Java 的构建工具由 discovery 侧单独映射。
+      framework: frameworkDetection.framework,
+      projectType: frameworkDetection.projectType,
+      isLibrary: frameworkDetection.isLibrary,
+      evidence: frameworkDetection.evidence,
+      configFiles: frameworkDetection.configFiles,
+      confidence: isSpringBoot ? 'high' : 'medium',
     }
   }
 
-  /** Check if pom.xml contains spring-boot dependency */
-  private checkSpringBoot(dirPath: string): boolean {
-    try {
-      const content = readFileSync(join(dirPath, 'pom.xml'), 'utf-8')
-      return content.includes('spring-boot-starter') || content.includes('spring-boot-maven-plugin')
-    } catch {
-      return false
-    }
-  }
-
-  /** Detect port from application.properties/yml */
-  private detectPort(dirPath: string): number | undefined {
-    const propFiles = [
-      'src/main/resources/application.properties',
-      'src/main/resources/application.yml',
-      'src/main/resources/application.yaml',
-    ]
-
-    for (const file of propFiles) {
-      const filePath = join(dirPath, file)
-      if (existsSync(filePath)) {
-        try {
-          const content = readFileSync(filePath, 'utf-8')
-          // Properties: server.port=8080
-          const propMatch = content.match(/server\.port\s*[=:]\s*(\d+)/)
-          if (propMatch) return parseInt(propMatch[1], 10)
-
-          // YAML: port: 8080 (under server:)
-          const yamlMatch = content.match(/port:\s*(\d+)/)
-          if (yamlMatch) return parseInt(yamlMatch[1], 10)
-        } catch {
-          // ignore
-        }
-      }
-    }
-
-    // Default Spring Boot port
-    return 8080
+  /**
+   * 端口探测：Phase 4 起**完全委托** PortDetector。
+   * application.properties / yml（缩进感知、支持多文档）由 config 来源负责，
+   * 认不出配置时回落到 projectType='java' 的框架默认 8080（与改造前行为一致，但可信度为 low）。
+   */
+  private detectPort(
+    dirPath: string,
+    framework: string | undefined,
+    args: string[],
+  ): number | undefined {
+    return detectStaticPort({
+      rootPath: dirPath,
+      command: 'mvn',
+      args,
+      framework,
+      projectType: 'java',
+    })
   }
 }

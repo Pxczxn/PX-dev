@@ -1,6 +1,13 @@
 // PX Dev — Shared Type Definitions
 // All TS interfaces shared across Main / Preload / Renderer
 
+import type {
+  DetectionEvidence,
+  DiscoveryConfidence,
+  DiscoveryProjectType,
+  ServiceDiscoveryMeta,
+} from './discovery'
+
 // ============ Workspace ============
 export interface Workspace {
   /** crypto.randomUUID() */
@@ -62,6 +69,12 @@ export interface Service {
   healthCheck?: HealthCheckConfig
   /** 是否用 shell:true（默认 false） */
   shellMode?: boolean
+  /**
+   * 发现元数据（可选）。
+   * 仅由 Workspace Discovery 批量添加的 Service 才携带；
+   * 手动创建的 Service 与旧配置里的 Service 都没有该字段。
+   */
+  discovery?: ServiceDiscoveryMeta
   /** ISO 8601 UTC */
   createdAt: string
   /** ISO 8601 UTC */
@@ -169,6 +182,20 @@ export interface ScanResult {
   recommendedArgs: string[]
   scripts?: Record<string, string>
   detectedPort?: number
+
+  // —— Phase 2 增强字段：全部可选，`system:scanDirectory` 与 ServiceEditDrawer 不受影响 ——
+  /** 框架标识，如 'vite' | 'next' | 'nest' | 'spring-boot' */
+  framework?: string
+  /** 精化后的项目类型（frontend / node / java / unknown），供 discovery 直接采用 */
+  projectType?: DiscoveryProjectType
+  /** monorepo library / 不可独立启动的模块 */
+  isLibrary?: boolean
+  /** 判定依据 */
+  evidence?: DetectionEvidence[]
+  /** 识别过程中命中的配置文件名（仅文件名） */
+  configFiles?: string[]
+  /** 识别置信度 */
+  confidence?: DiscoveryConfidence
 }
 
 // ============ ManagedProcess（ProcessManager 内部） ============
@@ -197,3 +224,6 @@ export type EnvironmentName =
   | 'mvn'
   | 'gradle'
   | 'git'
+
+// ============ Workspace Discovery ============
+export * from './discovery'

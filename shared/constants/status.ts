@@ -41,6 +41,28 @@ export const ERROR_CODES = {
   COMMAND_NOT_FOUND: 'COMMAND_NOT_FOUND',
   CONFIG_CORRUPTED: 'CONFIG_CORRUPTED',
   INTERNAL_ERROR: 'INTERNAL_ERROR',
+
+  // ---- Workspace Discovery（与 DiscoveryWarningCode 一一对应）----
+  /** 扫描根目录不存在 */
+  DISCOVERY_ROOT_NOT_FOUND: 'DISCOVERY_ROOT_NOT_FOUND',
+  /** 扫描根路径存在但不是目录 */
+  DISCOVERY_ROOT_NOT_DIRECTORY: 'DISCOVERY_ROOT_NOT_DIRECTORY',
+  /** 目录无读取权限（EACCES / EPERM） */
+  DISCOVERY_PERMISSION_DENIED: 'DISCOVERY_PERMISSION_DENIED',
+  /** 目录读取失败（含 Windows ENAMETOOLONG 长路径） */
+  DISCOVERY_READ_FAILED: 'DISCOVERY_READ_FAILED',
+  /** 达到 maxDepth，更深层未遍历 */
+  DISCOVERY_DEPTH_LIMIT: 'DISCOVERY_DEPTH_LIMIT',
+  /** 达到 maxDirectories，遍历被截断 */
+  DISCOVERY_DIRECTORY_LIMIT: 'DISCOVERY_DIRECTORY_LIMIT',
+  /** 遍历超时，返回部分结果 */
+  DISCOVERY_TIMEOUT: 'DISCOVERY_TIMEOUT',
+  /** 符号链接被跳过（不跟随） */
+  DISCOVERY_SYMLINK_SKIPPED: 'DISCOVERY_SYMLINK_SKIPPED',
+  /** 项目配置文件解析失败（如 package.json 非法 JSON） */
+  DISCOVERY_PARSE_FAILED: 'DISCOVERY_PARSE_FAILED',
+  /** 单个目录的扫描器执行抛错 */
+  DISCOVERY_SCANNER_FAILED: 'DISCOVERY_SCANNER_FAILED',
 } as const
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES]

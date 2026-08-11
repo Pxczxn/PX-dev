@@ -12,9 +12,18 @@ import {
   NPopconfirm,
   useMessage,
 } from 'naive-ui'
-import { PlayOutline, StopOutline, AddOutline, ArrowBackOutline, TrashOutline } from '@vicons/ionicons5'
+import {
+  PlayOutline,
+  StopOutline,
+  AddOutline,
+  ArrowBackOutline,
+  TrashOutline,
+  SearchOutline,
+  TrashBinOutline,
+} from '@vicons/ionicons5'
 import ServiceTable from '@renderer/components/ServiceTable.vue'
 import ServiceEditDrawer from '@renderer/components/ServiceEditDrawer.vue'
+import WorkspaceDiscoveryModal from '@renderer/components/WorkspaceDiscoveryModal.vue'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { useRuntimeStore } from '@renderer/stores/runtimeStore'
 import { api } from '@renderer/api'
@@ -31,8 +40,10 @@ const workspace = computed(() => workspaceStore.getWorkspace(workspaceId.value))
 const services = computed(() => workspaceStore.getServicesByWorkspace(workspaceId.value))
 
 const showEditDrawer = ref(false)
+const showDiscoveryModal = ref(false)
 const editingService = ref<Service | null>(null)
 const loading = ref(false)
+const serviceTableRef = ref<InstanceType<typeof ServiceTable> | null>(null)
 
 onMounted(async () => {
   loading.value = true
@@ -41,6 +52,8 @@ onMounted(async () => {
     workspaceStore.fetchServices(),
   ])
   runtimeStore.startListening()
+  // Phase 6：窗口刷新后从 Main 拉取已有端点快照（兜底，事件可能在 mount 前就已发出）
+  await runtimeStore.syncEndpoints()
   loading.value = false
 })
 
@@ -91,6 +104,20 @@ async function handleDeleteService(svc: Service): Promise<void> {
   }
 }
 
+async function handleBatchDelete(serviceIds: string[]): Promise<void> {
+  try {
+    // Refresh services list after batch delete
+    await workspaceStore.fetchServices()
+    await runtimeStore.syncAll()
+  } catch (err) {
+    console.error('Failed to sync after batch delete:', err)
+  }
+}
+
+function openBatchDeleteModal(): void {
+  serviceTableRef.value?.openBatchDeleteModal()
+}
+
 async function deleteWorkspace(): Promise<void> {
   if (!workspace.value) return
   try {
@@ -128,6 +155,18 @@ async function deleteWorkspace(): Promise<void> {
             <template #icon><AddOutline /></template>
             添加服务
           </NButton>
+          <NButton
+            type="error"
+            @click="openBatchDeleteModal"
+            :disabled="!serviceTableRef?.selectedCount"
+          >
+            <template #icon><TrashBinOutline /></template>
+            删除选中
+          </NButton>
+          <NButton @click="showDiscoveryModal = true">
+            <template #icon><SearchOutline /></template>
+            扫描工作区
+          </NButton>
           <NPopconfirm @positive-click="deleteWorkspace">
             <template #trigger>
               <NButton type="error" quaternary>
@@ -143,9 +182,12 @@ async function deleteWorkspace(): Promise<void> {
       <!-- Service Table -->
       <NCard size="small" class="table-card" :bordered="false">
         <ServiceTable
+          ref="serviceTableRef"
           :services="services"
+          :workspaces="workspaceStore.workspaces"
           @edit="openEditService"
           @delete="handleDeleteService"
+          @batch-delete="handleBatchDelete"
         />
       </NCard>
     </NSpin>
@@ -156,6 +198,14 @@ async function deleteWorkspace(): Promise<void> {
       :service="editingService"
       :workspace-id="workspaceId"
       @saved="workspaceStore.fetchServices()"
+    />
+
+    <!-- Workspace Discovery Modal -->
+    <WorkspaceDiscoveryModal
+      v-model:show="showDiscoveryModal"
+      :workspace-id="workspaceId"
+      :root-path="workspace?.rootPath"
+      @applied="workspaceStore.fetchServices()"
     />
   </div>
 </template>

@@ -4,8 +4,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { LogEntry } from '@shared/types'
-import { api } from '@renderer/api'
-import { onLogBatch } from '@renderer/api/events'
 import { DEFAULT_SETTINGS } from '@shared/constants/defaults'
 
 export const useLogStore = defineStore('log', () => {
@@ -57,6 +55,7 @@ export const useLogStore = defineStore('log', () => {
 
   /** Load history from main process */
   async function loadHistory(serviceId: string, limit?: number): Promise<void> {
+    const { api } = await import('@renderer/api')
     try {
       const history = await api.log.history(serviceId, limit)
       buffers.value.set(serviceId, history)
@@ -69,6 +68,7 @@ export const useLogStore = defineStore('log', () => {
   /** Subscribe to a service's log stream */
   async function subscribe(serviceId: string): Promise<void> {
     if (subscribed.value.has(serviceId)) return
+    const { api } = await import('@renderer/api')
     try {
       await api.log.subscribe(serviceId)
       subscribed.value.add(serviceId)
@@ -81,6 +81,7 @@ export const useLogStore = defineStore('log', () => {
   /** Unsubscribe from a service's log stream */
   async function unsubscribe(serviceId: string): Promise<void> {
     if (!subscribed.value.has(serviceId)) return
+    const { api } = await import('@renderer/api')
     try {
       await api.log.unsubscribe(serviceId)
       subscribed.value.delete(serviceId)
@@ -92,6 +93,7 @@ export const useLogStore = defineStore('log', () => {
 
   /** Export logs to file */
   async function exportLogs(serviceId: string, savePath?: string): Promise<void> {
+    const { api } = await import('@renderer/api')
     await api.log.export(serviceId, savePath)
   }
 
@@ -108,8 +110,10 @@ export const useLogStore = defineStore('log', () => {
   /** Start listening to log:batch events */
   function startListening(): void {
     if (unsubLogBatch) return
-    unsubLogBatch = onLogBatch((serviceId, entries) => {
-      appendBatch(serviceId, entries)
+    import('@renderer/api/events').then(({ onLogBatch }) => {
+      unsubLogBatch = onLogBatch((serviceId, entries) => {
+        appendBatch(serviceId, entries)
+      })
     })
   }
 

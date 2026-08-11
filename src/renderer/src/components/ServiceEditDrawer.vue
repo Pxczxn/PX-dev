@@ -22,6 +22,8 @@ import {
 import { FolderOpenOutline, ScanOutline } from '@vicons/ionicons5'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { api } from '@renderer/api'
+import { formatIpcError } from '@renderer/api/errors'
+import { buildServicePayload } from './servicePayload'
 import type { Service, HealthCheckConfig } from '@shared/types'
 
 // Form data interface (for create/edit)
@@ -71,6 +73,10 @@ const form = ref<ServiceFormData>({
 })
 const saving = ref(false)
 const scanning = ref(false)
+// 选择目录时的重入锁 + 失败冷却，与 WorkspaceCreateModal.handleSelectRootPath 对齐，
+// 避免失败瞬间连点刷出多条无信息量的「选择目录失败」
+const selectingDir = ref(false)
+const SELECT_DIR_FAIL_COOLDOWN_MS = 800
 
 const serviceTypes = [
   { label: '前端', value: 'frontend' },
@@ -123,6 +129,9 @@ watch(
 )
 
 async function selectDirectory(): Promise<void> {
+  // 防重入：与 WorkspaceCreateModal 一致，按钮loading态也依赖该标志
+  if (selectingDir.value) return
+  selectingDir.value = true
   try {
     const path = await api.system.selectDirectory()
     if (path) {
@@ -131,8 +140,12 @@ async function selectDirectory(): Promise<void> {
       await scanDirectory(path)
     }
   } catch (err) {
-    message.error('选择目录失败')
-    console.error(err)
+    console.error('[ServiceEditDrawer] selectDirectory failed:', err)
+    message.error(formatIpcError(err, '选择目录失败'))
+    // 失败冷却：避免瞬时连点刷出多条无信息量提示
+    await new Promise((resolve) => setTimeout(resolve, SELECT_DIR_FAIL_COOLDOWN_MS))
+  } finally {
+    selectingDir.value = false
   }
 }
 
@@ -174,26 +187,51 @@ async function scanDirectory(path?: string): Promise<void> {
   }
 }
 
+/** 将保存异常转换为对用户友好、同时保留调试线索的提示文案 */
+function formatSaveError(err: unknown): string {
+  if (!(err instanceof Error)) {
+    return `保存失败：${String(err)}`
+  }
+  // 结构化克隆失败意味着又有响应式对象泄漏到了 IPC 层
+  if (err.message.includes('could not be cloned')) {
+    return '保存失败：表单数据无法序列化，请重启应用后重试（详见控制台日志）'
+  }
+  return `保存失败：${err.message}`
+}
+
 async function handleSave(): Promise<void> {
-  if (!form.value.name || !form.value.cwd || !form.value.command) {
+  // 防重入：保存请求是异步的，双击按钮会导致重复创建 / 重复更新
+  if (saving.value) {
+    return
+  }
+
+  if (!form.value.name?.trim() || !form.value.cwd?.trim() || !form.value.command?.trim()) {
     message.warning('请填写必填字段: 名称、工作目录、命令')
     return
   }
 
   saving.value = true
   try {
+    // create / update 共用同一个规范化 builder：
+    // 既剥离 Vue 响应式代理，也把「填了又清空」的可选字段省略掉，
+    // 避免 openUrl='' / envFile='' / port='' 被 Zod 判定为非法参数。
     if (isEdit.value && props.service) {
-      await workspaceStore.updateService({ id: props.service.id, ...form.value })
+      await workspaceStore.updateService(buildServicePayload(form.value, { id: props.service.id }))
       message.success('服务已更新')
     } else {
-      await workspaceStore.createService(form.value as Record<string, unknown>)
+      const payload = buildServicePayload(form.value)
+      // 兜底：表单初始化时若未带上 workspaceId，用 props 补齐
+      if (!payload.workspaceId) {
+        payload.workspaceId = props.workspaceId
+      }
+      await workspaceStore.createService(payload)
       message.success('服务已创建')
     }
     emit('saved')
     emit('update:show', false)
   } catch (err) {
-    const error = err as { message?: string }
-    message.error(`保存失败: ${error?.message ?? '未知错误'}`)
+    console.error('[ServiceEditDrawer] save failed:', err)
+    message.error(formatSaveError(err))
   } finally {
     saving.value = false
   }
@@ -224,7 +262,7 @@ async function handleSave(): Promise<void> {
               placeholder="选择或输入项目目录"
               style="width: 340px;"
             />
-            <NButton @click="selectDirectory" quaternary>
+            <NButton @click="selectDirectory" :loading="selectingDir" quaternary>
               <template #icon><FolderOpenOutline /></template>
             </NButton>
             <NButton

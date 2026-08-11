@@ -67,10 +67,13 @@ export class WindowManager {
   /** Load the renderer (dev server or file://) */
   private loadRenderer(): void {
     if (isDev) {
-      // Dev server URL (electron-vite default)
-      const devServerUrl = process.env['ELECTRON_RENDERER_URL'] ?? 'http://localhost:5173'
-      this.mainWindow?.loadURL(devServerUrl)
-      this.mainWindow?.webContents.openDevTools()
+      // Dev server URL from electron-vite
+      const devServerUrl = process.env['ELECTRON_RENDERER_URL']
+      if (devServerUrl) {
+        this.mainWindow?.loadURL(devServerUrl)
+      } else {
+        logger.warn('ELECTRON_RENDERER_URL not set, cannot load renderer in dev mode')
+      }
     } else {
       // Production: load built file
       const rendererPath = join(__dirname, '../renderer/index.html')

@@ -1,8 +1,15 @@
 // PX Dev — Renderer Event Helpers
 // Convenience wrappers for log:batch and runtime:changed event subscriptions
 
-import { api } from './index'
-import type { LogEntry, ProcessRuntime } from '@shared/types'
+import type { LogEntry, ProcessRuntime, RuntimeEndpointSnapshot } from '@shared/types'
+
+// Lazy API accessor (avoid top-level import to prevent premature getApi() call)
+function getApi() {
+  if (typeof window !== 'undefined' && window.pxDev) {
+    return window.pxDev
+  }
+  throw new Error('window.pxDev is not available. Ensure preload script is loaded.')
+}
 
 /**
  * Subscribe to log batch events for a specific service.
@@ -15,7 +22,7 @@ import type { LogEntry, ProcessRuntime } from '@shared/types'
 export function onLogBatch(
   callback: (serviceId: string, entries: LogEntry[]) => void,
 ): () => void {
-  return api.events.onLogBatch((payload) => {
+  return getApi().events.onLogBatch((payload) => {
     callback(payload.serviceId, payload.entries)
   })
 }
@@ -31,7 +38,21 @@ export function onLogBatch(
 export function onRuntimeChanged(
   callback: (serviceId: string, runtime: ProcessRuntime) => void,
 ): () => void {
-  return api.events.onRuntimeChanged((payload) => {
+  return getApi().events.onRuntimeChanged((payload) => {
+    callback(payload.serviceId, payload.runtime)
+  })
+}
+
+/**
+ * Subscribe to runtime endpoint changes (Phase 6).
+ * Returns an unsubscribe function.
+ *
+ * runtime === null 表示该服务已停止 / 重启，UI 应清空端点展示。
+ */
+export function onRuntimeEndpoints(
+  callback: (serviceId: string, runtime: RuntimeEndpointSnapshot | null) => void,
+): () => void {
+  return getApi().events.onRuntimeEndpoints((payload) => {
     callback(payload.serviceId, payload.runtime)
   })
 }

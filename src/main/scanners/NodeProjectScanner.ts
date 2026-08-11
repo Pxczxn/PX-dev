@@ -1,16 +1,31 @@
 // PX Dev — Node Project Scanner
 // Reads package.json, detects lock files, identifies package manager, parses scripts
+//
+// Phase 2 起：包管理器 / 框架 / 命令三项判定全部**委托** src/main/detectors 下的纯函数原语，
+// 本类只负责读盘、编排与组装 ScanResult，不再自带第二套识别逻辑。
 
 import { existsSync, readFileSync } from 'fs'
 import { join } from 'path'
-import type { ScanResult } from '@shared/types'
+import type { DetectionEvidence, ScanResult } from '@shared/types'
+import {
+  detectNodeFramework,
+  detectPackageManager,
+  detectStaticPort,
+  recommendNodeCommand,
+} from '../detectors'
+import type { FrameworkAwarePackageJson, FrameworkDetection, PackageManagerId } from '../detectors'
 import type { ProjectScanner } from './index'
 
-interface PackageJson {
+interface PackageJson extends FrameworkAwarePackageJson {
   name?: string
   version?: string
-  scripts?: Record<string, string>
   packageManager?: string
+}
+
+/** package.json 读取结果：解析失败时 parseFailed=true，pkg 退化为空对象 */
+interface PackageJsonRead {
+  pkg: PackageJson
+  parseFailed: boolean
 }
 
 export class NodeProjectScanner implements ProjectScanner {
@@ -20,11 +35,18 @@ export class NodeProjectScanner implements ProjectScanner {
   }
 
   scan(dirPath: string): ScanResult {
-    const pkg = this.readPackageJson(dirPath)
-    const packageManager = this.detectPackageManager(dirPath, pkg)
+    const { pkg, parseFailed } = this.readPackageJson(dirPath)
+    const pmDetection = detectPackageManager(dirPath, pkg)
+    const packageManager = pmDetection.packageManager
     const scripts = pkg.scripts ?? {}
-    const detectedPort = this.detectPort(dirPath, scripts)
-    const { command, args } = this.recommendCommand(packageManager, scripts)
+    const { command, args } = recommendNodeCommand(packageManager, scripts)
+    const frameworkDetection = detectNodeFramework(dirPath, pkg, parseFailed)
+    const detectedPort = this.detectPort(dirPath, scripts, command, args, frameworkDetection)
+
+    const evidence: DetectionEvidence[] = [
+      ...pmDetection.evidence,
+      ...frameworkDetection.evidence,
+    ]
 
     return {
       path: dirPath,
@@ -34,117 +56,60 @@ export class NodeProjectScanner implements ProjectScanner {
       recommendedArgs: args,
       scripts,
       detectedPort,
+      // —— Phase 2 增强字段 ——
+      framework: frameworkDetection.framework,
+      projectType: frameworkDetection.projectType,
+      isLibrary: frameworkDetection.isLibrary,
+      evidence,
+      configFiles: this.collectConfigFiles(pmDetection.lockFiles, frameworkDetection.configFiles),
+      confidence: frameworkDetection.framework ? 'high' : 'medium',
     }
   }
 
   /** Read and parse package.json */
-  private readPackageJson(dirPath: string): PackageJson {
+  private readPackageJson(dirPath: string): PackageJsonRead {
     try {
       const raw = readFileSync(join(dirPath, 'package.json'), 'utf-8')
-      return JSON.parse(raw) as PackageJson
+      return { pkg: JSON.parse(raw) as PackageJson, parseFailed: false }
     } catch {
-      return {}
+      return { pkg: {}, parseFailed: true }
     }
   }
 
   /**
    * Detect package manager based on lock files and packageManager field.
-   * Priority: pnpm-lock.yaml > yarn.lock > package-lock.json > packageManager field > default npm
+   * 保留为公开方法（历史调用点兼容），实现委托 PackageManagerDetector。
    */
-  detectPackageManager(dirPath: string, pkg: PackageJson): string {
-    if (existsSync(join(dirPath, 'pnpm-lock.yaml'))) return 'pnpm'
-    if (existsSync(join(dirPath, 'yarn.lock'))) return 'yarn'
-    if (existsSync(join(dirPath, 'package-lock.json'))) return 'npm'
-    if (existsSync(join(dirPath, 'bun.lockb'))) return 'bun'
-
-    // Check packageManager field in package.json
-    if (pkg.packageManager) {
-      const pm = pkg.packageManager.split('@')[0]
-      if (['npm', 'pnpm', 'yarn', 'bun'].includes(pm)) {
-        return pm
-      }
-    }
-
-    return 'npm'
+  detectPackageManager(dirPath: string, pkg: PackageJson): PackageManagerId {
+    return detectPackageManager(dirPath, pkg).packageManager
   }
 
-  /** Recommend command + args based on package manager and available scripts */
-  private recommendCommand(
-    packageManager: string,
+  /** package.json + lockfile + 框架配置文件，去重后作为该项目的配置文件清单 */
+  private collectConfigFiles(lockFiles: string[], frameworkFiles: string[]): string[] {
+    const files = ['package.json', ...lockFiles, ...frameworkFiles]
+    return [...new Set(files)]
+  }
+
+  /**
+   * 端口探测：Phase 4 起**完全委托** PortDetector（command > config > env > framework-default）。
+   * 相比改造前只看 vite.config + dev 脚本，这里额外覆盖 .env 链与框架默认端口，
+   * 且同一套优先级规则被 discovery 侧复用，不再有第二份实现。
+   */
+  private detectPort(
+    dirPath: string,
     scripts: Record<string, string>,
-  ): { command: string; args: string[] } {
-    // Determine dev script: prefer 'dev' > 'start' > 'serve'
-    let devScript = ''
-    if (scripts['dev']) {
-      devScript = 'dev'
-    } else if (scripts['start']) {
-      devScript = 'start'
-    } else if (scripts['serve']) {
-      devScript = 'serve'
-    }
-
-    if (!devScript) {
-      // No dev script found, just run install
-      return {
-        command: packageManager,
-        args: ['install'],
-      }
-    }
-
-    // npm/yarn/bun use 'run' prefix; pnpm also supports 'run'
-    // yarn doesn't need 'run' but supports it
-    if (packageManager === 'yarn') {
-      return {
-        command: 'yarn',
-        args: devScript === 'start' ? ['start'] : ['run', devScript],
-      }
-    }
-
-    return {
-      command: packageManager,
-      args: ['run', devScript],
-    }
-  }
-
-  /** Try to detect port from vite.config, package.json scripts, or common patterns */
-  private detectPort(dirPath: string, scripts: Record<string, string>): number | undefined {
-    // Check vite.config for port
-    const viteConfigPort = this.checkViteConfig(dirPath)
-    if (viteConfigPort) return viteConfigPort
-
-    // Check dev script for port argument
-    const devScript = scripts['dev'] || scripts['start'] || scripts['serve'] || ''
-    const portMatch = devScript.match(/--port\s+(\d+)/)
-    if (portMatch) {
-      return parseInt(portMatch[1], 10)
-    }
-
-    // Check for PORT env in script
-    const envPortMatch = devScript.match(/PORT=(\d+)/)
-    if (envPortMatch) {
-      return parseInt(envPortMatch[1], 10)
-    }
-
-    return undefined
-  }
-
-  /** Parse vite.config.ts/js for server.port */
-  private checkViteConfig(dirPath: string): number | undefined {
-    const configFiles = ['vite.config.ts', 'vite.config.js', 'vite.config.mts', 'vite.config.mjs']
-    for (const file of configFiles) {
-      const configPath = join(dirPath, file)
-      if (existsSync(configPath)) {
-        try {
-          const content = readFileSync(configPath, 'utf-8')
-          const portMatch = content.match(/port:\s*(\d+)/)
-          if (portMatch) {
-            return parseInt(portMatch[1], 10)
-          }
-        } catch {
-          // ignore read errors
-        }
-      }
-    }
-    return undefined
+    command: string,
+    args: string[],
+    frameworkDetection: FrameworkDetection,
+  ): number | undefined {
+    return detectStaticPort({
+      rootPath: dirPath,
+      command,
+      args,
+      scripts,
+      framework: frameworkDetection.framework,
+      projectType: frameworkDetection.projectType,
+      configFiles: frameworkDetection.configFiles,
+    })
   }
 }

@@ -1,4 +1,7 @@
 // PX Dev — Service IPC Handlers (start/stop/restart/runtime/workspace ops)
+//
+// Phase 6 新增：接收 optional RuntimeEndpointRegistry，
+// 进程状态进入终态（stopped / exited / failed）时清理对应服务的运行时端点快照。
 
 import { ipcMain } from 'electron'
 import { IPC_CHANNELS } from '@shared/constants/ipc-channels'
@@ -13,16 +16,26 @@ import {
 } from '@shared/schemas/ipc.schema'
 import type { ProcessManager } from '../managers/ProcessManager'
 import type { WorkspaceManager } from '../managers/WorkspaceManager'
+import type { RuntimeEndpointRegistry } from '../discovery'
 import { validate, IpcError } from './index'
+
+/** 进入终态时清空运行时端点（Runtime 停止即删，永不残留） */
+const TERMINAL_STATUSES = new Set(['stopped', 'exited', 'failed'])
 
 export function registerServiceHandlers(
   pm: ProcessManager,
   wm: WorkspaceManager,
   sender: (channel: string, payload: unknown) => void,
+  endpointRegistry?: RuntimeEndpointRegistry,
 ): void {
-  // Set up runtime change callback → emit to renderer
+  // Set up runtime change callback → emit to renderer + Phase 6 清理端点
   pm.setRuntimeChangeCallback((serviceId, runtime) => {
     sender(IPC_CHANNELS.SERVICE_RUNTIME_CHANGED_EVENT, { serviceId, runtime })
+
+    // Phase 6：进程终态时清空运行时端点快照
+    if (endpointRegistry && TERMINAL_STATUSES.has(runtime.status)) {
+      endpointRegistry.clear(serviceId)
+    }
   })
 
   // service:start

@@ -18,6 +18,7 @@ import {
 import { FolderOpenOutline } from '@vicons/ionicons5'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { api } from '@renderer/api'
+import { formatIpcError } from '@renderer/api/errors'
 
 const props = defineProps<{
   show: boolean
@@ -42,6 +43,16 @@ const form = ref({
 const saving = ref(false)
 // 目录选择对话框是否正在打开（防止重复点击）
 const selectingDir = ref(false)
+
+/**
+ * 目录选择失败后的按钮冷却时长（毫秒）。
+ *
+ * 失败往往是**瞬时返回**的（例如主进程 handler 同步抛错），
+ * 若立刻解除禁用，按钮看上去「毫无反应」，用户会连续点击，
+ * 于是叠出一串完全相同的错误提示（本次 bug 现场即为 4 条）。
+ * 冷却期内保持 loading/禁用，既给出反馈也杜绝提示刷屏。
+ */
+const SELECT_FAIL_COOLDOWN_MS = 800
 
 const colorOptions = [
   { label: '蓝色', value: '#2b8cff' },
@@ -94,8 +105,11 @@ async function handleSelectRootPath(): Promise<void> {
       form.value.name = segments[segments.length - 1] ?? ''
     }
   } catch (err) {
-    message.error('选择目录失败')
-    console.error(err)
+    console.error('[WorkspaceCreateModal] selectDirectory failed:', err)
+    // 带上真实原因，避免出现无信息量的「选择目录失败」
+    message.error(formatIpcError(err, '选择目录失败'))
+    // 失败后短暂冷却，防止用户连点刷出多条重复提示
+    await new Promise((resolve) => setTimeout(resolve, SELECT_FAIL_COOLDOWN_MS))
   } finally {
     selectingDir.value = false
   }

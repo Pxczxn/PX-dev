@@ -2,6 +2,7 @@
 // All IPC handler input validation schemas
 
 import { z } from 'zod'
+import { ServiceDiscoveryMetaSchema } from './discovery.schema'
 
 // ===== 通用 =====
 const uuidSchema = z.string().min(1)
@@ -73,10 +74,20 @@ export const CreateServiceSchema = z.object({
     })
     .optional(),
   shellMode: z.boolean().default(false),
+  /** 发现元数据（可选）；仅 workspace:applyDiscovery 会带上 */
+  discovery: ServiceDiscoveryMetaSchema.optional(),
 })
 
 export const UpdateServiceSchema = CreateServiceSchema.partial().extend({
   id: uuidSchema,
+})
+
+// ===== Workspace Discovery（Phase 3） =====
+
+/** workspace:applyDiscovery 入参：批量创建 Service（main 侧单次落盘） */
+export const ApplyDiscoverySchema = z.object({
+  workspaceId: uuidSchema,
+  services: z.array(CreateServiceSchema).min(1).max(200),
 })
 
 export const DeleteServiceSchema = z.object({ id: uuidSchema })
@@ -137,6 +148,8 @@ export const SystemOpenExternalSchema = z.object({ url: z.string().url() })
 export const SystemSelectDirectorySchema = z.object({}).optional()
 export const SystemScanDirectorySchema = z.object({ path: pathSchema })
 export const SystemShowItemSchema = z.object({ path: pathSchema })
+/** system:detectProject 入参：单目录轻量检测 */
+export const SystemDetectProjectSchema = z.object({ path: pathSchema })
 
 // ===== App =====
 export const AppGetSettingsSchema = z.object({}).optional()

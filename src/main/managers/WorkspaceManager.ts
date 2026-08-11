@@ -2,7 +2,7 @@
 // Workspace + Service CRUD with ConfigManager persistence
 
 import { randomUUID } from 'crypto'
-import type { Workspace, Service, AppConfig } from '@shared/types'
+import type { Workspace, Service, AppConfig, ServiceDiscoveryMeta } from '@shared/types'
 import { ConfigManager } from './ConfigManager'
 import { ProcessManager } from './ProcessManager'
 import { logger } from '../utils/logger'
@@ -52,6 +52,8 @@ export interface CreateServiceInput {
     retries?: number
   }
   shellMode?: boolean
+  /** 发现元数据（可选）；仅批量添加发现结果时携带 */
+  discovery?: ServiceDiscoveryMeta
 }
 
 export interface UpdateServiceInput extends Partial<CreateServiceInput> {
@@ -165,29 +167,7 @@ export class WorkspaceManager {
   }
 
   createService(input: CreateServiceInput): Service {
-    const now = new Date().toISOString()
-    const service: Service = {
-      id: randomUUID(),
-      workspaceId: input.workspaceId,
-      name: input.name,
-      type: input.type,
-      cwd: input.cwd,
-      command: input.command,
-      args: input.args,
-      packageManager: input.packageManager,
-      port: input.port,
-      env: input.env,
-      envFile: input.envFile,
-      enabled: input.enabled ?? true,
-      dependencies: input.dependencies ?? [],
-      startupDelay: input.startupDelay,
-      autoOpenBrowser: input.autoOpenBrowser,
-      openUrl: input.openUrl,
-      healthCheck: input.healthCheck,
-      shellMode: input.shellMode ?? false,
-      createdAt: now,
-      updatedAt: now,
-    }
+    const service = this.buildService(input)
 
     const config = this.configManager.get()
     config.services.push(service)
@@ -195,6 +175,47 @@ export class WorkspaceManager {
 
     logger.info(`Service created: ${service.name} (${service.id})`)
     return this.deepClone(service)
+  }
+
+  /**
+   * 批量创建 Service（Workspace Discovery 专用）。
+   *
+   * 与逐条 createService 的差异：
+   * 1. **单次落盘** —— 所有 Service 构造完毕后只调用一次 configManager.save，避免 N 次原子写；
+   * 2. 每条自动写入 discovery 元数据 `{ managed: true, lastDetectedAt, sourcePath }`（Phase 6 重扫比对预埋），
+   *    渲染层传入的 discovery 只作为基底，managed / lastDetectedAt / sourcePath 由 main 侧强制校正；
+   * 3. 每条的 workspaceId 一律以入参 workspaceId 为准，避免渲染层伪造跨工作区写入。
+   */
+  applyDiscovery(workspaceId: string, inputs: CreateServiceInput[]): Service[] {
+    const config = this.configManager.get()
+    const exists = config.workspaces.some((w) => w.id === workspaceId)
+    if (!exists) {
+      throw new Error(`Workspace not found: ${workspaceId}`)
+    }
+
+    const detectedAt = Date.now()
+    const created: Service[] = []
+
+    for (const input of inputs) {
+      const service = this.buildService({
+        ...input,
+        workspaceId,
+        discovery: {
+          ...input.discovery,
+          managed: true,
+          lastDetectedAt: detectedAt,
+          sourcePath: input.discovery?.sourcePath ?? input.cwd,
+        },
+      })
+      created.push(service)
+    }
+
+    // 全部构造成功后再统一 push + 一次性落盘
+    config.services.push(...created)
+    this.configManager.save(config)
+
+    logger.info(`Discovery applied: ${created.length} services created in workspace ${workspaceId}`)
+    return this.deepClone(created)
   }
 
   updateService(id: string, input: Omit<UpdateServiceInput, 'id'>): Service {
@@ -248,6 +269,34 @@ export class WorkspaceManager {
   }
 
   // ============ Private ============
+
+  /** 由 CreateServiceInput 构造完整 Service（不落盘），createService / applyDiscovery 共用 */
+  private buildService(input: CreateServiceInput): Service {
+    const now = new Date().toISOString()
+    return {
+      id: randomUUID(),
+      workspaceId: input.workspaceId,
+      name: input.name,
+      type: input.type,
+      cwd: input.cwd,
+      command: input.command,
+      args: input.args,
+      packageManager: input.packageManager,
+      port: input.port,
+      env: input.env,
+      envFile: input.envFile,
+      enabled: input.enabled ?? true,
+      dependencies: input.dependencies ?? [],
+      startupDelay: input.startupDelay,
+      autoOpenBrowser: input.autoOpenBrowser,
+      openUrl: input.openUrl,
+      healthCheck: input.healthCheck,
+      shellMode: input.shellMode ?? false,
+      discovery: input.discovery,
+      createdAt: now,
+      updatedAt: now,
+    }
+  }
 
   private deepClone<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj)) as T

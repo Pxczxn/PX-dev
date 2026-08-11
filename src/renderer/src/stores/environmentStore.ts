@@ -4,7 +4,6 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { EnvironmentInfo, EnvironmentName } from '@shared/types'
-import { api } from '@renderer/api'
 
 export const useEnvironmentStore = defineStore('environment', () => {
   const environments = ref<EnvironmentInfo[]>([])
@@ -14,6 +13,7 @@ export const useEnvironmentStore = defineStore('environment', () => {
   async function detectAll(): Promise<void> {
     loading.value = true
     try {
+      const { api } = await import('@renderer/api')
       environments.value = await api.environment.detect()
     } catch (err) {
       console.error('Failed to detect environments:', err)
@@ -26,6 +26,7 @@ export const useEnvironmentStore = defineStore('environment', () => {
   /** Detect a single environment by name */
   async function detectSingle(name: EnvironmentName): Promise<EnvironmentInfo> {
     try {
+      const { api } = await import('@renderer/api')
       const info = await api.environment.detectSingle(name)
       // Update in array
       const idx = environments.value.findIndex((e) => e.name === name)

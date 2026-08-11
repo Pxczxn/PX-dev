@@ -9,9 +9,11 @@ import { PortManager } from './managers/PortManager'
 import { WorkspaceManager } from './managers/WorkspaceManager'
 import { EnvironmentManager } from './managers/EnvironmentManager'
 import { ScannerRegistry } from './scanners'
+import { WorkspaceDiscoveryManager, RuntimeEndpointRegistry } from './discovery'
 import { TrayManager } from './tray/TrayManager'
 import { WindowManager } from './window/WindowManager'
 import { registerAllHandlers } from './ipc'
+import { installApplicationMenu } from './menu/applicationMenu'
 import { logger } from './utils/logger'
 
 // ============ Global manager instances ============
@@ -22,6 +24,8 @@ let portManager: PortManager
 let workspaceManager: WorkspaceManager
 let environmentManager: EnvironmentManager
 let scannerRegistry: ScannerRegistry
+let discoveryManager: WorkspaceDiscoveryManager
+let endpointRegistry: RuntimeEndpointRegistry
 let trayManager: TrayManager
 let windowManager: WindowManager
 
@@ -46,6 +50,7 @@ if (!gotTheLock) {
 // ============ App initialization ============
 function initializeApp(): void {
   logger.info('PX Dev starting...')
+  installApplicationMenu()
 
   // 1. Load config
   configManager = new ConfigManager()
@@ -58,6 +63,9 @@ function initializeApp(): void {
   workspaceManager = new WorkspaceManager(configManager, processManager)
   environmentManager = new EnvironmentManager()
   scannerRegistry = new ScannerRegistry()
+  // 复用同一个 ScannerRegistry 单例，避免出现平行的第二套识别逻辑
+  discoveryManager = new WorkspaceDiscoveryManager(scannerRegistry)
+  endpointRegistry = new RuntimeEndpointRegistry()
 
   // Wire up dependencies
   processManager.setPortManager(portManager)
@@ -76,6 +84,8 @@ function initializeApp(): void {
       workspaceManager,
       environmentManager,
       scannerRegistry,
+      discoveryManager,
+      runtimeEndpointRegistry: endpointRegistry,
     },
     (channel, payload) => windowManager.send(channel, payload),
     {
@@ -121,6 +131,7 @@ app.on('before-quit', async (event) => {
     event.preventDefault()
     logger.info('Stopping all processes before quit...')
     await processManager.stopAll()
+    endpointRegistry?.dispose()
     logManager.stopFlushTimer()
     app.exit()
   }
