@@ -67,10 +67,11 @@ tmp/
 .workbuddy/
 .zcode/
 
-# 文档（仅保留仓库根目录 README.md）
+# 文档（仅保留仓库根目录 README.md 和 MIGRATION.md）
 docs/
 *.md
 !/README.md
+!/MIGRATION.md
 
 # 操作系统
 .DS_Store

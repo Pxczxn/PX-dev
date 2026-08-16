@@ -5,13 +5,13 @@ import type { PxDevClient } from '@shared/types/client'
 /**
  * 创建抛出 NotImplementedError 的命名空间代理
  */
-function createNotImplementedNamespace(name: string): Record<string, unknown> {
+function createNotImplementedNamespace<T>(name: string): T {
   return new Proxy(
     {},
     {
       get: (_, method) => notImplemented(`${name}.${String(method)}`),
     },
-  )
+  ) as T
 }
 
 /**
