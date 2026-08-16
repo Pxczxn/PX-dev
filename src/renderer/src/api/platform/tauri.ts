@@ -16,7 +16,8 @@ function createNotImplementedNamespace<T>(name: string): T {
 
 /**
  * Tauri 适配器：实现完整 PxDevClient 接口
- * Phase 1: 仅实现 system.ping，其他方法抛出 NotImplementedError
+ * Phase 1: system.ping
+ * Phase 2: app.getSettings, app.updateSettings, app.getVersion
  */
 export function createTauriAdapter(): PxDevClient {
   return {
@@ -29,13 +30,21 @@ export function createTauriAdapter(): PxDevClient {
       showItemInFolder: notImplemented('system.showItemInFolder'),
       detectProject: notImplemented('system.detectProject'),
     },
+    app: {
+      getSettings: async () => await invoke('get_settings'),
+      updateSettings: async (input: Record<string, unknown>) => await invoke('update_settings', { input }),
+      getVersion: async () => await invoke<string>('get_app_version'),
+      quit: notImplemented('app.quit'),
+      minimize: notImplemented('app.minimize'),
+      getDataPath: notImplemented('app.getDataPath'),
+      selectDataPath: notImplemented('app.selectDataPath'),
+    },
     workspace: createNotImplementedNamespace('workspace'),
     service: createNotImplementedNamespace('service'),
     process: createNotImplementedNamespace('process'),
     log: createNotImplementedNamespace('log'),
     environment: createNotImplementedNamespace('environment'),
     port: createNotImplementedNamespace('port'),
-    app: createNotImplementedNamespace('app'),
     events: createNotImplementedNamespace('events'),
   } as PxDevClient
 }

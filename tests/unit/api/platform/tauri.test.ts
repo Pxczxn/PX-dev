@@ -86,11 +86,13 @@ describe('Tauri Adapter', () => {
     expect(() => adapter.system.selectDirectory()).toThrow('system.selectDirectory is not implemented')
   })
 
-  it('throws NotImplementedError for app methods', () => {
+  it('throws NotImplementedError for unimplemented app methods', () => {
     const adapter = createTauriAdapter()
 
-    expect(() => adapter.app.getSettings()).toThrow(NotImplementedError)
-    expect(() => adapter.app.getSettings()).toThrow('app.getSettings is not implemented')
+    // Phase 2: getSettings, updateSettings, getVersion are now implemented
+    // Only test unimplemented methods
+    expect(() => adapter.app.quit()).toThrow(NotImplementedError)
+    expect(() => adapter.app.quit()).toThrow('app.quit is not implemented')
   })
 
   it('throws NotImplementedError for event methods', () => {

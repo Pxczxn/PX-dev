@@ -1,5 +1,64 @@
 # Electron → Tauri 2 迁移状态
 
+## Phase 2: Config & Settings ✅ 完成
+
+**实施日期**：2026-08-16
+
+### 已实现
+
+- ✅ tauri-plugin-store 2.4.4 集成
+- ✅ Settings 类型定义（Rust）
+- ✅ `app.getSettings()` - 读取配置
+- ✅ `app.updateSettings(input)` - 更新配置
+- ✅ `app.getVersion()` - 获取应用版本
+- ✅ 配置文件存储（config.json）
+- ✅ 默认配置初始化
+- ✅ 单元测试（8 tests）
+
+### 技术方案
+
+**存储层**：
+- 使用官方 `tauri-plugin-store` 2.4.4
+- 存储格式：JSON（与 Electron 兼容）
+- 存储位置：Tauri app_data_dir
+- 文件名：`config.json`
+
+**Rust 类型**：
+```rust
+pub struct Settings {
+    pub theme: String,
+    pub close_behavior: String,
+    pub max_log_lines: u32,
+    pub start_minimized: bool,
+    pub auto_restore_last_session: bool,
+    pub startup_interval: u32,
+    pub show_timestamp: bool,
+    pub default_browser: String,
+    pub data_path: Option<String>,
+}
+```
+
+**Commands**：
+- `get_settings` → 读取配置，首次启动返回默认值
+- `update_settings` → 合并更新配置
+- `get_app_version` → 返回 Cargo.toml 中的版本号
+
+### Tauri Adapter 更新
+
+```typescript
+app: {
+  getSettings: async () => await invoke('get_settings'),
+  updateSettings: async (input) => await invoke('update_settings', { input }),
+  getVersion: async () => await invoke<string>('get_app_version'),
+  quit: notImplemented('app.quit'),              // Phase 2 未实现
+  minimize: notImplemented('app.minimize'),      // Phase 2 未实现
+  getDataPath: notImplemented('app.getDataPath'), // Phase 2 未实现
+  selectDataPath: notImplemented('app.selectDataPath'), // Phase 2 未实现
+}
+```
+
+---
+
 ## Phase 1: 基础迁移 ✅ 完成
 
 **实施日期**：2026-08-16
@@ -37,7 +96,7 @@
 |------|------|------|
 | **Electron 开发** | `npm run dev` | 启动 Electron 窗口，所有功能可用 |
 | **Tauri 开发** | `npm run dev:tauri` | 启动 Tauri 窗口，仅基础 UI + ping |
-| **独立 Web 预览** | `npm run dev:web` | 浏览器打开 http://localhost:5173 |
+| **独立 Web 预览** | `npm run dev:web` | 浏览器打开 http://localhost:4444 |
 | **Electron 构建** | `npm run build:win` | 打包 Windows 安装程序 |
 | **Tauri 构建** | `npm run build:tauri` | 打包 Tauri 应用 |
 
@@ -66,29 +125,29 @@ App.vue → api.system.ping() → Platform Adapter → invoke('px_ping') → Rus
                                                 → 严格断言匹配
 ```
 
-### Electron-Only API（Phase 1 未迁移）
+### Electron-Only API（Phase 1-2 未迁移）
 
 以下 API 当前仅在 Electron 中可用，Tauri 调用会抛出 `NotImplementedError`：
 
-#### workspace 命名空间
+#### workspace 命名空间（Phase 3 计划迁移）
 - `list()`, `create()`, `update()`, `delete()`
 - `discover()`, `applyDiscovery()`
 - `getRuntimeEndpoints()`
 
-#### service 命名空间
+#### service 命名空间（Phase 3 计划迁移）
 - `list()`, `create()`, `update()`, `delete()`
 
-#### process 命名空间
+#### process 命名空间（Phase 4 计划迁移）
 - `start()`, `stop()`, `restart()`, `forceKill()`
 - `getRuntime()`, `startWorkspace()`, `stopWorkspace()`, `stopAll()`
 
-#### log 命名空间
+#### log 命名空间（Phase 5 计划迁移）
 - `subscribe()`, `unsubscribe()`, `clear()`, `history()`, `export()`
 
-#### environment 命名空间
+#### environment 命名空间（Phase 6 计划迁移）
 - `detect()`, `detectSingle()`
 
-#### port 命名空间
+#### port 命名空间（Phase 6 计划迁移）
 - `check()`, `owner()`, `kill()`, `waitListening()`
 
 #### system 命名空间
@@ -97,10 +156,12 @@ App.vue → api.system.ping() → Platform Adapter → invoke('px_ping') → Rus
 - ❌ `scanDirectory()`, `showItemInFolder()`, `detectProject()`
 
 #### app 命名空间
-- `getSettings()`, `updateSettings()`, `getVersion()`
-- `quit()`, `minimize()`, `getDataPath()`, `selectDataPath()`
+- ✅ `getSettings()` — **Phase 2 已实现**
+- ✅ `updateSettings(input)` — **Phase 2 已实现**
+- ✅ `getVersion()` — **Phase 2 已实现**
+- ❌ `quit()`, `minimize()`, `getDataPath()`, `selectDataPath()`
 
-#### events 命名空间
+#### events 命名空间（Phase 5 计划迁移）
 - `onLogBatch()`, `onRuntimeChanged()`, `onRuntimeEndpoints()`
 
 ---
@@ -108,13 +169,36 @@ App.vue → api.system.ping() → Platform Adapter → invoke('px_ping') → Rus
 ## Phase 2-6：待定
 
 业务逻辑迁移将在后续阶段进行：
-- Phase 2: Config & Settings
+- **Phase 2: Config & Settings** ✅ **已完成**
 - Phase 3: Workspace & Service CRUD
 - Phase 4: Process Management
 - Phase 5: Logging & Events
 - Phase 6: Discovery & Environment Detection
 
 ---
+
+## 文件变更清单
+
+### Phase 2 新增文件（4 个）
+
+**Rust 类型和 Commands**：
+- `src-tauri/src/types.rs` — Settings 和 AppConfig 类型定义
+- `src-tauri/src/commands/app.rs` — get_settings, update_settings, get_app_version
+
+**单元测试**：
+- `tests/unit/api/platform/app.test.ts` — app adapter 测试（8 tests）
+
+**依赖更新**：
+- `src-tauri/Cargo.toml` — 新增 tauri-plugin-store 2.4.4
+
+### Phase 2 修改文件（4 个）
+
+- `src-tauri/src/lib.rs` — 注册 store plugin 和新 commands
+- `src-tauri/src/commands/mod.rs` — 导出 app module
+- `src/renderer/src/api/platform/tauri.ts` — 实现 app.{getSettings, updateSettings, getVersion}
+- `tests/unit/api/platform/tauri.test.ts` — 更新测试（app 方法已实现）
+
+### Phase 1 新增文件（~17 个）
 
 ## 关键设计决策
 
@@ -176,6 +260,27 @@ serde_json = "1"
 ```json
 {
   "permissions": ["core:default"]
+}
+```
+
+### 9. Phase 2: 使用 tauri-plugin-store（新增）
+- 官方维护，稳定可靠
+- JSON 格式与 Electron 兼容
+- 自动处理跨平台路径
+- 内置原子写入机制
+- 存储位置：Tauri app_data_dir
+- 文件名：config.json
+
+### 10. Phase 2: Settings 字段命名兼容（新增）
+```rust
+// Rust 使用 snake_case
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]  // 序列化时转换为 camelCase
+pub struct Settings {
+    pub theme: String,
+    pub close_behavior: String,  // → closeBehavior
+    pub max_log_lines: u32,      // → maxLogLines
+    ...
 }
 ```
 

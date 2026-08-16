@@ -5,7 +5,7 @@
   "identifier": "com.pxdev.app",
   "build": {
     "frontendDist": "../out/renderer",
-    "devUrl": "http://localhost:5173",
+    "devUrl": "http://localhost:4444",
     "beforeDevCommand": "npm run dev:web",
     "beforeBuildCommand": "npm run build:web"
   },
