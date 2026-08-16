@@ -35,10 +35,29 @@ config.json
 ```
 
 **ConfigStore 职责**：
-- ✅ 统一配置初始化（确保 version/settings/workspaces/services 完整）
+- ✅ 统一配置初始化（逐字段补缺失，而非仅检查 version flag）
 - ✅ 防止部分初始化问题（无论先调用 get 还是 update）
+- ✅ 自动版本迁移（`open()` 时自动调用 `migrate_if_needed()`）
 - ✅ Settings 校验和默认值应用
 - ✅ 为 Phase 3 Workspace/Service CRUD 提供基础
+
+**ConfigStore 架构保证**：
+```rust
+impl ConfigStore {
+    pub fn open(app: &AppHandle) -> Result<Self, String> {
+        // 1. 打开 store
+        // 2. ensure_initialized() — 逐字段补缺失
+        //    - version 不存在 → 补
+        //    - settings 不存在 → 补
+        //    - workspaces 不存在 → 补
+        //    - services 不存在 → 补
+        // 3. migrate_if_needed() — 自动版本迁移
+        // 4. 返回已初始化 + 已迁移的 ConfigStore
+    }
+}
+
+// Commands 只需调用 ConfigStore::open()，无需关心初始化
+```
 
 **类型安全**：
 ```rust
@@ -110,6 +129,18 @@ pub async fn update_settings(
 - ✅ getVersion 调用
 - ✅ 未实现方法抛出 NotImplementedError
 - ✅ Phase 1 px_ping 仍然工作
+
+### 已知限制（Phase 2）
+
+**配置损坏恢复**（未实现，非阻塞）：
+- Electron ConfigManager 有 `config.json → config.json.bak → DEFAULT_CONFIG` 降级机制
+- Rust ConfigStore 当前配置反序列化失败直接返回 Error
+- 未来可独立补充，不影响当前迁移进度
+
+**为 Phase 3 的要求**：
+- ✅ **必须通过 ConfigStore 访问配置**（禁止 `app.store()` 直接访问）
+- ✅ Workspace/Service CRUD 都应调用 `ConfigStore::open()` 获取实例
+- ✅ 避免每个 Command 重复初始化逻辑
 
 ---
 
