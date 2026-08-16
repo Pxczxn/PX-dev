@@ -6,6 +6,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ProcessRuntime, ProcessStatus, RuntimeEndpointSnapshot } from '@shared/types'
 import { logger } from '@renderer/utils/logger'
+import { isTauri } from '@renderer/platform/detect'
 
 export const useRuntimeStore = defineStore('runtime', () => {
   // Map<serviceId, ProcessRuntime>
@@ -125,6 +126,12 @@ export const useRuntimeStore = defineStore('runtime', () => {
   /** Start listening to runtime:changed + runtime:endpoints events */
   function startListening(): void {
     if (unsubRuntimeChanged) return
+
+    // Phase 1: Tauri 模式下跳过事件监听
+    if (isTauri()) {
+      logger.warn('RuntimeStore', 'Event listeners not available in Tauri Phase 1')
+      return
+    }
 
     // Lazy import to ensure window.pxDev is available
     import('@renderer/api/events').then(({ onRuntimeChanged, onRuntimeEndpoints }) => {

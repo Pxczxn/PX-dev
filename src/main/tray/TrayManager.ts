@@ -27,19 +27,28 @@ export class TrayManager {
   /** Create the system tray */
   create(): void {
     const iconPath = this.getIconPath()
-    let icon: NativeImage
-
-    try {
-      icon = nativeImage.createFromPath(iconPath)
-      if (icon.isEmpty()) {
-        // Fallback: create a small empty icon
-        icon = nativeImage.createEmpty()
-        logger.warn('Tray icon not found, using empty icon')
-      }
-    } catch {
-      icon = nativeImage.createEmpty()
-      logger.warn('Failed to load tray icon, using empty icon')
+    const { existsSync } = require('fs')
+    
+    // 验证图标文件存在
+    if (!existsSync(iconPath)) {
+      logger.error(`TrayManager: Icon file not found at ${iconPath}`)
+      logger.error(`TrayManager: process.resourcesPath = ${process.resourcesPath}`)
+      logger.error(`TrayManager: process.cwd() = ${process.cwd()}`)
+      logger.error(`TrayManager: isDev = ${!!process.env['ELECTRON_RENDERER_URL']}`)
+      throw new Error(`Tray icon file not found: ${iconPath}`)
     }
+
+    const icon = nativeImage.createFromPath(iconPath)
+    
+    // 验证图标加载成功
+    if (icon.isEmpty()) {
+      logger.error(`TrayManager: Icon loaded but is empty from ${iconPath}`)
+      logger.error(`TrayManager: Icon size: ${JSON.stringify(icon.getSize())}`)
+      throw new Error(`Tray icon is empty after loading from: ${iconPath}`)
+    }
+    
+    logger.info(`TrayManager: Icon loaded successfully from ${iconPath}`)
+    logger.info(`TrayManager: Icon size: ${JSON.stringify(icon.getSize())}`)
 
     this.tray = new Tray(icon)
     this.tray.setToolTip('PX Dev — 进程管理工具')

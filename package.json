@@ -17,13 +17,20 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build:win": "electron-vite build && electron-builder --win --config electron-builder.yml",
-    "pack": "electron-builder --dir --config electron-builder.yml"
+    "pack": "electron-builder --dir --config electron-builder.yml",
+    "dev:web": "vite --config vite.config.ts",
+    "build:web": "vite build --config vite.config.ts",
+    "tauri": "tauri",
+    "dev:tauri": "tauri dev",
+    "build:tauri": "tauri build"
   },
   "dependencies": {
+    "@tauri-apps/api": "2.11.1",
     "tree-kill": "^1.2.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
     "@types/node": "^20.14.9",
     "@typescript-eslint/eslint-plugin": "^7.13.0",
     "@typescript-eslint/parser": "^7.13.0",

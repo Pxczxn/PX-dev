@@ -10,6 +10,9 @@ release/
 *.tsbuildinfo
 .eslintcache
 
+# Tauri
+src-tauri/target/
+
 # 缓存
 .vite-cache/
 .cache/

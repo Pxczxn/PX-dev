@@ -148,9 +148,11 @@ export function useGlobalShortcuts() {
     routes.forEach((route) => {
       keyboard.register({
         key: route.key,
-        [isMac ? 'meta' : 'ctrl']: true,
+        [modKey]: true,
         description: route.description,
-        action: () => router.push(route.path),
+        action: async () => {
+          await router.push(route.path)
+        },
         context: 'global',
       })
     })
@@ -160,17 +162,21 @@ export function useGlobalShortcuts() {
   function registerBrowserShortcuts(): void {
     keyboard.register({
       key: '[',
-      [isMac ? 'meta' : 'ctrl']: true,
+      [modKey]: true,
       description: '后退',
-      action: () => router.back(),
+      action: () => {
+        router.back()
+      },
       context: 'global',
     })
 
     keyboard.register({
       key: ']',
-      [isMac ? 'meta' : 'ctrl']: true,
+      [modKey]: true,
       description: '前进',
-      action: () => router.forward(),
+      action: () => {
+        router.forward()
+      },
       context: 'global',
     })
   }
@@ -179,9 +185,11 @@ export function useGlobalShortcuts() {
   function registerSettingsShortcut(): void {
     keyboard.register({
       key: ',',
-      [isMac ? 'meta' : 'ctrl']: true,
+      [modKey]: true,
       description: '打开设置',
-      action: () => router.push('/settings'),
+      action: async () => {
+        await router.push('/settings')
+      },
       context: 'global',
     })
   }

@@ -5,8 +5,12 @@ directories:
   output: release/${version}
 files:
   - out/**/*
-  - resources/**/*
   - package.json
+extraResources:
+  - from: resources/tray-icon.png
+    to: tray-icon.png
+  - from: resources/app-icon.png
+    to: app-icon.png
 win:
   icon: build/icon.ico
   target:

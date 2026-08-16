@@ -6,6 +6,7 @@ import { ref, computed } from 'vue'
 import type { LogEntry } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/constants/defaults'
 import { logger } from '@renderer/utils/logger'
+import { isTauri } from '@renderer/platform/detect'
 
 export const useLogStore = defineStore('log', () => {
   // Map<serviceId, LogEntry[]>
@@ -111,6 +112,13 @@ export const useLogStore = defineStore('log', () => {
   /** Start listening to log:batch events */
   function startListening(): void {
     if (unsubLogBatch) return
+
+    // Phase 1: Tauri 模式下跳过事件监听
+    if (isTauri()) {
+      logger.warn('LogStore', 'Event listeners not available in Tauri Phase 1')
+      return
+    }
+
     import('@renderer/api/events').then(({ onLogBatch }) => {
       unsubLogBatch = onLogBatch((serviceId, entries) => {
         appendBatch(serviceId, entries)

@@ -17,6 +17,7 @@ import {
 } from 'naive-ui'
 import MainLayout from './layouts/MainLayout.vue'
 import { useSettingsStore } from './stores/settingsStore'
+import { isTauri } from './platform/detect'
 
 const settingsStore = useSettingsStore()
 
@@ -88,6 +89,29 @@ if (typeof window !== 'undefined' && window.matchMedia) {
 
 onMounted(async () => {
   await settingsStore.loadSettings()
+
+  // Phase 1: Tauri smoke test（仅开发模式，严格断言）
+  if (process.env.NODE_ENV === 'development' && isTauri()) {
+    try {
+      const { api } = await import('@renderer/api')
+
+      // 严格检查 ping 方法存在
+      if (!api.system.ping) {
+        throw new Error('Tauri system.ping adapter is not wired')
+      }
+
+      // 调用并断言返回值
+      const response = await api.system.ping()
+
+      if (response !== 'PX Dev Tauri backend ready') {
+        throw new Error(`Unexpected ping response: ${response}`)
+      }
+
+      console.log('[Tauri Smoke Test] ✓', response)
+    } catch (error) {
+      console.error('[Tauri Smoke Test] ✗', error)
+    }
+  }
 })
 </script>
 
