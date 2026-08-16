@@ -1,0 +1,51 @@
+# 所有文本文件统一使用 LF 换行
+* text=auto eol=lf
+
+# Windows 专属脚本保持 CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Shell 脚本保持 LF
+*.sh text eol=lf
+
+# 图片
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.bmp binary
+*.webp binary
+
+# 字体
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.eot binary
+
+# 压缩包
+*.zip binary
+*.gz binary
+*.tar binary
+*.7z binary
+*.rar binary
+
+# 编译产物
+*.dll binary
+*.exe binary
+*.so binary
+*.dylib binary
+
+# PDF
+*.pdf binary
+
+# 音视频
+*.mp3 binary
+*.mp4 binary
+*.avi binary
+*.mov binary
+*.wmv binary
+
+# SVG 保持文本格式
+*.svg text

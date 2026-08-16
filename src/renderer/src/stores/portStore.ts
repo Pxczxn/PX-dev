@@ -5,6 +5,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { PortOwner } from '@shared/types'
 import { COMMON_PORTS } from '@shared/constants/defaults'
+import { logger } from '@renderer/utils/logger'
 
 interface PortCheckResult {
   port: number
@@ -35,7 +36,7 @@ export const usePortStore = defineStore('port', () => {
       })
       results.value = await Promise.all(promises)
     } catch (err) {
-      console.error('Failed to check ports:', err)
+      logger.error('PortStore', 'Failed to check ports', err)
     } finally {
       checking.value = false
     }
@@ -74,7 +75,7 @@ export const usePortStore = defineStore('port', () => {
       }
       return success
     } catch (err) {
-      console.error('Failed to kill process:', err)
+      logger.error('PortStore', 'Failed to kill process', err)
       return false
     }
   }

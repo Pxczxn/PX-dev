@@ -68,6 +68,10 @@ export const IPC_CHANNELS = {
   APP_QUIT: 'app:quit',
   APP_MINIMIZE: 'app:minimize',
 
+  // Data path
+  APP_GET_DATA_PATH: 'app:getDataPath',
+  APP_SELECT_DATA_PATH: 'app:selectDataPath',
+
   // Runtime event (M→R)
   SERVICE_RUNTIME_CHANGED_EVENT: 'service:runtime:changed',
   /** 运行时端点变更事件（M→R，Phase 5） */

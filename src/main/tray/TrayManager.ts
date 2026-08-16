@@ -163,7 +163,15 @@ export class TrayManager {
 
   /** Get tray icon path */
   private getIconPath(): string {
-    // Try resources/tray-icon.png relative to app path
-    return join(process.resourcesPath ?? process.cwd(), 'resources', 'tray-icon.png')
+    // 开发环境和生产环境都从 resources 目录读取
+    const isDev = !!process.env['ELECTRON_RENDERER_URL']
+    
+    if (isDev) {
+      // 开发环境：从项目根目录的 resources 文件夹
+      return join(process.cwd(), 'resources', 'tray-icon.png')
+    } else {
+      // 生产环境：从打包后的 resources 文件夹
+      return join(process.resourcesPath, 'tray-icon.png')
+    }
   }
 }

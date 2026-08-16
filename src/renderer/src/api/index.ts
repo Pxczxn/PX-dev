@@ -186,6 +186,8 @@ export const api = {
     getVersion: () => getApi().app.getVersion(),
     quit: () => getApi().app.quit(),
     minimize: () => getApi().app.minimize(),
+    getDataPath: () => getApi().app.getDataPath(),
+    selectDataPath: () => getApi().app.selectDataPath(),
   },
   events: {
     onLogBatch: (cb: (payload: { serviceId: string; entries: LogEntry[] }) => void) =>

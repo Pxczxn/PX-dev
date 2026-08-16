@@ -21,6 +21,11 @@ export class WindowManager {
 
   /** Create the main BrowserWindow */
   createWindow(): BrowserWindow {
+    // 获取图标路径
+    const iconPath = isDev
+      ? join(__dirname, '../../build/icon.png')
+      : join(process.resourcesPath, 'app-icon.png')
+
     this.mainWindow = new BrowserWindow({
       width: 1280,
       height: 800,
@@ -28,6 +33,7 @@ export class WindowManager {
       minHeight: 600,
       show: false, // Show on 'ready-to-show' to avoid flash
       title: 'PX Dev',
+      icon: iconPath, // 应用图标
       backgroundColor: '#0f0f1a',
       webPreferences: {
         preload: join(__dirname, '../preload/index.js'),

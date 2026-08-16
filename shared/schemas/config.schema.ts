@@ -13,6 +13,8 @@ export const SettingsSchema = z.object({
   startupInterval: z.number().int().min(0).max(30000),
   showTimestamp: z.boolean(),
   defaultBrowser: z.string(),
+  /** 自定义数据目录路径，留空表示使用默认位置 */
+  dataPath: z.string().optional(),
 })
 
 export const AppConfigSchema = z.object({

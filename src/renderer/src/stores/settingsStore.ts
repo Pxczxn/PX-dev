@@ -5,6 +5,7 @@ import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { Settings } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/constants/defaults'
+import { logger } from '@renderer/utils/logger'
 
 export const useSettingsStore = defineStore('settings', () => {
   const settings = ref<Settings>({ ...DEFAULT_SETTINGS })
@@ -16,7 +17,7 @@ export const useSettingsStore = defineStore('settings', () => {
       const { api } = await import('@renderer/api')
       settings.value = await api.app.getSettings()
     } catch (err) {
-      console.error('Failed to load settings:', err)
+      logger.error('SettingsStore', 'Failed to load settings', err)
       settings.value = { ...DEFAULT_SETTINGS }
     } finally {
       loading.value = false
@@ -29,7 +30,7 @@ export const useSettingsStore = defineStore('settings', () => {
       const updated = await api.app.updateSettings(patch)
       settings.value = updated
     } catch (err) {
-      console.error('Failed to update settings:', err)
+      logger.error('SettingsStore', 'Failed to update settings', err)
       throw err
     }
   }

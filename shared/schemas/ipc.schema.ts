@@ -163,6 +163,7 @@ export const AppUpdateSettingsSchema = z.object({
   startupInterval: z.number().int().min(0).max(30000).optional(),
   showTimestamp: z.boolean().optional(),
   defaultBrowser: z.string().optional(),
+  dataPath: z.string().optional(),
 })
 export const AppQuitSchema = z.object({}).optional()
 export const AppMinimizeSchema = z.object({}).optional()

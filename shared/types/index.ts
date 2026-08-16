@@ -150,6 +150,8 @@ export interface Settings {
   showTimestamp: boolean
   /** 'system' 或浏览器 exe 路径 */
   defaultBrowser: string
+  /** 自定义数据目录路径，留空表示使用默认位置 */
+  dataPath?: string
 }
 
 // ============ AppConfig ============

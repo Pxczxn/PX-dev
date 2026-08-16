@@ -2,7 +2,7 @@
 // PX Dev — WorkspaceDetailView
 // Workspace detail page with role-based service grouping
 
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, h, defineAsyncComponent } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   NButton,
@@ -24,14 +24,17 @@ import {
   FolderOpenOutline,
   CreateOutline,
   TrashOutline,
+  ArrowBackOutline,
+  ChevronForwardOutline,
 } from '@vicons/ionicons5'
 import ServiceTable from '@renderer/components/ServiceTable.vue'
-import ServiceEditDrawer from '@renderer/components/ServiceEditDrawer.vue'
-import WorkspaceDiscoveryModal from '@renderer/components/WorkspaceDiscoveryModal.vue'
+const ServiceEditDrawer = defineAsyncComponent(() => import('@renderer/components/ServiceEditDrawer.vue'))
+const WorkspaceDiscoveryModal = defineAsyncComponent(() => import('@renderer/components/WorkspaceDiscoveryModal.vue'))
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { useRuntimeStore } from '@renderer/stores/runtimeStore'
 import { api } from '@renderer/api'
 import type { Service } from '@shared/types'
+import { logger } from '@renderer/utils/logger'
 
 const route = useRoute()
 const router = useRouter()
@@ -52,6 +55,29 @@ const runningCount = computed(() => {
     if (rt?.status === 'running' || rt?.status === 'starting') {
       count++
     }
+  }
+  return count
+})
+
+// Frontend/Backend counts
+const frontendCount = computed(() => services.value.filter((s) => s.role === 'frontend').length)
+const frontendRunningCount = computed(() => {
+  let count = 0
+  for (const svc of services.value) {
+    if (svc.role !== 'frontend') continue
+    const rt = runtimeStore.getRuntime(svc.id)
+    if (rt?.status === 'running' || rt?.status === 'starting') count++
+  }
+  return count
+})
+
+const backendCount = computed(() => services.value.filter((s) => s.role === 'backend').length)
+const backendRunningCount = computed(() => {
+  let count = 0
+  for (const svc of services.value) {
+    if (svc.role !== 'backend') continue
+    const rt = runtimeStore.getRuntime(svc.id)
+    if (rt?.status === 'running' || rt?.status === 'starting') count++
   }
   return count
 })
@@ -84,8 +110,8 @@ async function startAll(): Promise<void> {
     }
     await runtimeStore.syncAll()
   } catch (err) {
+    logger.error('WorkspaceDetailView', 'Failed to start all services', err)
     message.error('批量启动失败')
-    console.error(err)
   }
 }
 
@@ -95,8 +121,8 @@ async function stopAll(): Promise<void> {
     message.success('所有服务已停止')
     await runtimeStore.syncAll()
   } catch (err) {
+    logger.error('WorkspaceDetailView', 'Failed to stop all services', err)
     message.error('批量停止失败')
-    console.error(err)
   }
 }
 
@@ -115,8 +141,8 @@ async function handleDeleteService(svc: Service): Promise<void> {
     await workspaceStore.deleteService(svc.id)
     message.success(`服务 ${svc.name} 已删除`)
   } catch (err) {
+    logger.error('WorkspaceDetailView', 'Failed to delete service', err)
     message.error('删除失败')
-    console.error(err)
   }
 }
 
@@ -125,7 +151,7 @@ async function handleBatchDelete(serviceIds: string[]): Promise<void> {
     await workspaceStore.fetchServices()
     await runtimeStore.syncAll()
   } catch (err) {
-    console.error('Failed to sync after batch delete:', err)
+    logger.error('WorkspaceDetailView', 'Failed to sync after batch delete', err)
   }
 }
 
@@ -163,8 +189,8 @@ async function handleMoreMenuSelect(key: string): Promise<void> {
         try {
           await api.system.openPath(workspace.value.rootPath)
         } catch (err) {
+          logger.error('WorkspaceDetailView', 'Failed to open directory', err)
           message.error('打开目录失败')
-          console.error(err)
         }
       }
       break
@@ -187,8 +213,8 @@ async function deleteWorkspace(): Promise<void> {
     message.success('工作区已删除')
     router.push('/workspaces')
   } catch (err) {
+    logger.error('WorkspaceDetailView', 'Failed to delete workspace', err)
     message.error('删除工作区失败')
-    console.error(err)
   }
 }
 </script>
@@ -199,10 +225,34 @@ async function deleteWorkspace(): Promise<void> {
       <!-- Page Header -->
       <div class="page-header">
         <div class="header-left">
-          <h1 class="page-title">{{ workspace?.name ?? '工作区详情' }}</h1>
-          <span class="page-stats">
-            {{ serviceCount }} 个服务 · {{ runningCount }} 个运行中
-          </span>
+          <!-- Breadcrumb -->
+          <div class="breadcrumb">
+            <NButton text @click="router.push('/workspaces')" class="breadcrumb-item">
+              工作区
+            </NButton>
+            <NIcon :component="ChevronForwardOutline" :size="14" class="breadcrumb-separator" />
+            <span class="breadcrumb-item breadcrumb-current">{{ workspace?.name ?? '详情' }}</span>
+          </div>
+          
+          <div class="title-row">
+            <NButton text circle @click="router.push('/workspaces')" class="back-button">
+              <template #icon><ArrowBackOutline /></template>
+            </NButton>
+            <h1 class="page-title">{{ workspace?.name ?? '工作区详情' }}</h1>
+          </div>
+          
+          <div class="page-stats">
+            <div class="stats-container">
+              <div class="stat-card stat-frontend">
+                <span class="stat-label">前端</span>
+                <span class="stat-value">{{ frontendRunningCount }}<span class="stat-sep">/</span>{{ frontendCount }}</span>
+              </div>
+              <div class="stat-card stat-backend">
+                <span class="stat-label">后端</span>
+                <span class="stat-value">{{ backendRunningCount }}<span class="stat-sep">/</span>{{ backendCount }}</span>
+              </div>
+            </div>
+          </div>
         </div>
         
         <!-- Action Buttons -->
@@ -292,7 +342,54 @@ async function deleteWorkspace(): Promise<void> {
 .header-left {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-1);
+  gap: var(--sp-2);
+}
+
+/* Breadcrumb */
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.breadcrumb-item {
+  color: var(--text-3);
+  font-size: 13px;
+  padding: 0;
+  transition: color var(--dur-1) var(--ease-out);
+}
+
+.breadcrumb-item:not(.breadcrumb-current):hover {
+  color: var(--accent);
+}
+
+.breadcrumb-current {
+  color: var(--text-2);
+  font-weight: 500;
+}
+
+.breadcrumb-separator {
+  color: var(--text-4);
+  flex-shrink: 0;
+}
+
+/* Title row with back button */
+.title-row {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.back-button {
+  color: var(--text-3);
+  font-size: 20px;
+  transition: all var(--dur-1) var(--ease-out);
+}
+
+.back-button:hover {
+  color: var(--accent);
+  background: var(--bg-hover);
 }
 
 .page-title {
@@ -305,6 +402,46 @@ async function deleteWorkspace(): Promise<void> {
 
 .page-stats {
   font-size: 13px;
+  color: var(--text-3);
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stats-container {
+  display: flex;
+  gap: var(--sp-2);
+}
+
+.stat-card {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: var(--r-md);
+  background-color: var(--bg-surface-2);
+  border: 1px solid var(--bg-surface-3);
+}
+
+.stat-card .stat-label {
+  color: var(--text-3);
+  font-size: 13px;
+}
+
+.stat-card .stat-value {
+  color: var(--text-2);
+  font-weight: 600;
+  font-size: 14px;
+  font-family: var(--font-mono);
+}
+
+.stat-card .stat-sep {
+  color: var(--text-4);
+  font-weight: 400;
+  margin: 0 1px;
+}
+
+.stat-total {
   color: var(--text-3);
 }
 

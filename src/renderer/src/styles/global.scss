@@ -67,8 +67,9 @@
     "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "Cascadia Code", "Fira Code", "SFMono-Regular",
     Consolas, monospace;
-  --fs-display: 20px;
-  --fs-title: clamp(20px, 1.2vw + 14px, 26px);
+  --fs-display: 28px;
+  --fs-title: clamp(22px, 1.2vw + 16px, 28px);
+  --fs-heading: 16px;
   --fs-section: 15px;
   --fs-body: 14px;
   --fs-caption: 12px;

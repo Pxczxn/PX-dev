@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // PX Dev — SettingsView
-// 5 groups: General / Appearance / Startup / Logs / Browser
+// 5 groups: General / Appearance / Startup / Logs / Browser / Data
 
 import { onMounted, ref, toRaw } from 'vue'
 import {
@@ -14,9 +14,13 @@ import {
   NButton,
   NSpace,
   useMessage,
+  NText,
+  NButtonGroup,
 } from 'naive-ui'
 import type { Settings } from '@shared/types'
 import { useSettingsStore } from '@renderer/stores/settingsStore'
+import { api } from '@renderer/api'
+import { logger } from '@renderer/utils/logger'
 
 const message = useMessage()
 const settingsStore = useSettingsStore()
@@ -33,11 +37,47 @@ const closeBehaviorOptions = [
   { label: '询问', value: 'ask' },
 ]
 
+const currentDataPath = ref<string>('')
+
 onMounted(async () => {
   await settingsStore.loadSettings()
+  try {
+    currentDataPath.value = await api.app.getDataPath()
+  } catch {
+    currentDataPath.value = ''
+  }
 })
 
 const saving = ref(false)
+const changingDataPath = ref(false)
+
+async function handleSelectDataPath(): Promise<void> {
+  if (changingDataPath.value) return
+  changingDataPath.value = true
+  try {
+    const result = await api.app.selectDataPath()
+    if (result.success) {
+      message.success('数据目录已更改，应用将重启...')
+    } else if (result.reason === 'cancelled') {
+      // User cancelled, do nothing
+    } else if (result.reason === 'same') {
+      message.info('已选择相同的路径，无需更改')
+    }
+  } catch (err) {
+    message.error(`更改数据目录失败: ${err instanceof Error ? err.message : String(err)}`)
+  } finally {
+    changingDataPath.value = false
+  }
+}
+
+async function handleOpenDataPath(): Promise<void> {
+  if (!currentDataPath.value) return
+  try {
+    await api.system.openPath(currentDataPath.value)
+  } catch {
+    message.error('无法打开目录')
+  }
+}
 
 async function handleSave(): Promise<void> {
   if (saving.value) {
@@ -61,7 +101,7 @@ async function handleSave(): Promise<void> {
     await settingsStore.updateSettings(payload)
     message.success('设置已保存')
   } catch (err) {
-    console.error('[SettingsView] save failed:', err)
+    logger.error('SettingsView', 'Failed to save settings', err)
     message.error(formatSaveError(err))
   } finally {
     saving.value = false
@@ -163,6 +203,33 @@ function formatSaveError(err: unknown): string {
               placeholder="system 或浏览器路径"
               style="width: 300px;"
             />
+          </NFormItem>
+        </NForm>
+      </NCard>
+
+      <!-- Data -->
+      <NCard title="数据" size="small" :bordered="false">
+        <NForm label-placement="left" :label-width="140">
+          <NFormItem label="数据存放目录">
+            <NText v-if="currentDataPath" depth="3" style="word-break: break-all; max-width: 400px; display: block; margin-bottom: 8px;">
+              {{ currentDataPath }}
+            </NText>
+            <NButtonGroup>
+              <NButton
+                size="small"
+                :loading="changingDataPath"
+                @click="handleSelectDataPath"
+              >
+                更改目录
+              </NButton>
+              <NButton
+                v-if="currentDataPath"
+                size="small"
+                @click="handleOpenDataPath"
+              >
+                打开目录
+              </NButton>
+            </NButtonGroup>
           </NFormItem>
         </NForm>
       </NCard>

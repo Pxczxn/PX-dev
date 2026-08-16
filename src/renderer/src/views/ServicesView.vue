@@ -2,14 +2,15 @@
 // PX Dev — ServicesView
 // Global service list across all workspaces
 
-import { onMounted, ref, computed } from 'vue'
+import { onMounted, ref, computed, defineAsyncComponent } from 'vue'
 import { NCard, NSpin, NSelect, NSpace, NButton, useMessage } from 'naive-ui'
 import { AddOutline } from '@vicons/ionicons5'
 import ServiceTable from '@renderer/components/ServiceTable.vue'
-import ServiceEditDrawer from '@renderer/components/ServiceEditDrawer.vue'
+const ServiceEditDrawer = defineAsyncComponent(() => import('@renderer/components/ServiceEditDrawer.vue'))
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { useRuntimeStore } from '@renderer/stores/runtimeStore'
 import type { Service } from '@shared/types'
+import { logger } from '@renderer/utils/logger'
 
 const message = useMessage()
 const workspaceStore = useWorkspaceStore()
@@ -55,8 +56,8 @@ async function handleDeleteService(svc: Service): Promise<void> {
     await workspaceStore.deleteService(svc.id)
     message.success(`服务 ${svc.name} 已删除`)
   } catch (err) {
+    logger.error('ServicesView', 'Failed to delete service', err)
     message.error('删除失败')
-    console.error(err)
   }
 }
 </script>

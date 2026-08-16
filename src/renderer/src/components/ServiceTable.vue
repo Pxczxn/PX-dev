@@ -25,6 +25,7 @@ import {
   TrashBinOutline,
   ChevronDownOutline,
   ChevronForwardOutline,
+  CheckmarkCircleOutline,
 } from '@vicons/ionicons5'
 import StatusBadge from './StatusBadge.vue'
 import { useService } from '@renderer/composables/useService'
@@ -32,6 +33,7 @@ import { useRuntimeStore } from '@renderer/stores/runtimeStore'
 import { api } from '@renderer/api'
 import type { Service, ProcessStatus, ProcessRuntime, Workspace, ServiceRole } from '@shared/types'
 import { formatIpcError } from '@renderer/api/errors'
+import { logger } from '@renderer/utils/logger'
 
 // ============ Group Mode ============
 export type GroupMode = 'flat' | 'role-only' | 'workspace-role'
@@ -60,7 +62,6 @@ interface TableRow {
 interface RoleSectionRow {
   type: 'role-section'
   role: ServiceRole
-  services: Service[]
   serviceCount: number
   runningCount: number
   collapsed: boolean
@@ -70,7 +71,6 @@ interface RoleSectionRow {
 interface WorkspaceSectionRow {
   type: 'workspace-section'
   workspace: Workspace
-  roleSections: RoleSectionRow[]
   totalServiceCount: number
   totalRunningCount: number
 }
@@ -92,18 +92,12 @@ function getServiceRole(service: Service): ServiceRole {
 
 /** Get role display label */
 function getRoleLabel(role: ServiceRole): string {
-  return role === 'frontend' ? '前端服务' : '后端服务'
+  return ''
 }
 
 /** Get service badge label */
 function getServiceBadgeLabel(service: Service): string {
-  const typeLabels: Record<string, string> = {
-    frontend: '前端',
-    node: 'Node',
-    java: 'Java',
-    generic: '通用',
-  }
-  return typeLabels[service.type] ?? '通用'
+  return ''
 }
 
 /** Get service badge color */
@@ -171,6 +165,52 @@ function openBatchDeleteModal(): void {
   showBatchDeleteModal.value = true
 }
 
+async function batchStartServices(): Promise<void> {
+  const idsToStart = Array.from(selectedServiceIds.value)
+  const servicesToStart = props.services.filter((s) => idsToStart.includes(s.id))
+  
+  let successCount = 0
+  let failCount = 0
+  
+  for (const svc of servicesToStart) {
+    try {
+      await startService(svc)
+      successCount++
+    } catch {
+      failCount++
+    }
+  }
+  
+  if (failCount > 0) {
+    message.warning(`已启动 ${successCount} 个服务，${failCount} 个失败`)
+  } else {
+    message.success(`已启动 ${successCount} 个服务`)
+  }
+}
+
+async function batchStopServices(): Promise<void> {
+  const idsToStop = Array.from(selectedServiceIds.value)
+  const servicesToStop = props.services.filter((s) => idsToStop.includes(s.id))
+  
+  let successCount = 0
+  let failCount = 0
+  
+  for (const svc of servicesToStop) {
+    try {
+      await stopService(svc)
+      successCount++
+    } catch {
+      failCount++
+    }
+  }
+  
+  if (failCount > 0) {
+    message.warning(`已停止 ${successCount} 个服务，${failCount} 个失败`)
+  } else {
+    message.success(`已停止 ${successCount} 个服务`)
+  }
+}
+
 async function performBatchDelete(): Promise<void> {
   batchDeleting.value = true
   const idsToDelete = Array.from(selectedServiceIds.value)
@@ -229,6 +269,49 @@ const tableData = computed((): DataTableRow[] => {
     }))
   }
 
+  // Role-only mode: flat role grouping (independent of workspaces)
+  if (props.groupMode === 'role-only') {
+    const roleOrder: ServiceRole[] = ['frontend', 'backend']
+    const rows: DataTableRow[] = []
+
+    for (const role of roleOrder) {
+      const roleServices = props.services.filter((svc) => getServiceRole(svc) === role)
+
+      if (roleServices.length === 0) continue
+
+      const runningCount = roleServices.filter((s) => {
+        const rt = runtimeStore.getRuntime(s.id)
+        return rt?.status === 'running' || rt?.status === 'starting'
+      }).length
+
+      const key = `role:${role}`
+      const collapsed = isCollapsed(key)
+
+      // Section header row
+      rows.push({
+        type: 'role-section',
+        role,
+        serviceCount: roleServices.length,
+        runningCount,
+        collapsed,
+      })
+
+      // Service rows (only if not collapsed)
+      if (!collapsed) {
+        for (const svc of roleServices) {
+          rows.push({
+            type: 'service',
+            service: svc,
+            runtime: runtimeStore.getRuntime(svc.id),
+          })
+        }
+      }
+    }
+
+    return rows
+  }
+
+  // Workspace-role mode: workspace + role hierarchy (requires workspaces prop)
   const workspaceMap = new Map((props.workspaces ?? []).map((w) => [w.id, w]))
   const servicesByWorkspace = new Map<string, Map<ServiceRole, Service[]>>()
 
@@ -251,51 +334,15 @@ const tableData = computed((): DataTableRow[] => {
 
   const rows: DataTableRow[] = []
 
-  // Role-only mode: flat role grouping
-  if (props.groupMode === 'role-only') {
-    const roleOrder: ServiceRole[] = ['frontend', 'backend']
-    
-    for (const role of roleOrder) {
-      const services: Service[] = []
-      for (const roleMap of servicesByWorkspace.values()) {
-        const roleServices = roleMap.get(role)
-        if (roleServices) {
-          services.push(...roleServices)
-        }
-      }
-      
-      if (services.length === 0) continue
-
-      const runningCount = services.filter((s) => {
-        const rt = runtimeStore.getRuntime(s.id)
-        return rt?.status === 'running' || rt?.status === 'starting'
-      }).length
-
-      const key = `role:${role}`
-      rows.push({
-        type: 'role-section',
-        role,
-        services,
-        serviceCount: services.length,
-        runningCount,
-        collapsed: isCollapsed(key),
-      })
-    }
-    
-    return rows
-  }
-
-  // Workspace-role mode: full hierarchy
   for (const [workspaceId, roleMap] of servicesByWorkspace) {
     const workspace = workspaceMap.get(workspaceId)
     if (!workspace) continue
 
-    const roleSections: RoleSectionRow[] = []
+    const roleOrder: ServiceRole[] = ['frontend', 'backend']
     let totalServiceCount = 0
     let totalRunningCount = 0
+    const wsRows: DataTableRow[] = []
 
-    const roleOrder: ServiceRole[] = ['frontend', 'backend']
-    
     for (const role of roleOrder) {
       const services = roleMap.get(role)
       if (!services || services.length === 0) continue
@@ -309,25 +356,40 @@ const tableData = computed((): DataTableRow[] => {
       totalRunningCount += runningCount
 
       const key = `ws:${workspaceId}:${role}`
-      roleSections.push({
+      const collapsed = isCollapsed(key)
+
+      // Role section header row
+      wsRows.push({
         type: 'role-section',
         role,
-        services,
         serviceCount: services.length,
         runningCount,
-        collapsed: isCollapsed(key),
+        collapsed,
         workspaceId,
       })
+
+      // Service rows (only if not collapsed)
+      if (!collapsed) {
+        for (const svc of services) {
+          wsRows.push({
+            type: 'service',
+            service: svc,
+            runtime: runtimeStore.getRuntime(svc.id),
+          })
+        }
+      }
     }
 
-    if (roleSections.length > 0) {
+    // Workspace section header row
+    if (wsRows.length > 0) {
       rows.push({
         type: 'workspace-section',
         workspace,
-        roleSections,
         totalServiceCount,
         totalRunningCount,
       })
+      // Add all workspace + role rows
+      rows.push(...wsRows)
     }
   }
 
@@ -339,7 +401,7 @@ async function openLocalUrl(url: string): Promise<void> {
   try {
     await api.system.openExternal(url)
   } catch (err) {
-    console.error('[ServiceTable] openExternal failed:', err)
+    logger.error('ServiceTable', 'Failed to open external URL', err)
   }
 }
 
@@ -355,7 +417,7 @@ function getRoleSectionKey(row: RoleSectionRow): string {
 const columns = computed(() => {
   const cols = []
 
-  if (props.groupMode === 'flat' || props.groupMode === 'workspace-role') {
+  if (props.groupMode !== 'flat') {
     cols.push({
       title: () => h(NCheckbox, {
         checked: isAllSelected.value,
@@ -400,22 +462,23 @@ const columns = computed(() => {
             default: () => collapsed ? h(ChevronForwardOutline) : h(ChevronDownOutline)
           }),
           h('span', { class: 'role-section-name' }, getRoleLabel(row.role)),
-          h('span', { class: 'role-section-count' },
-            `${row.runningCount}/${row.serviceCount} 运行中`
-          ),
         ])
       }
 
       if (row.type !== 'service') return null
       const svc = row.service
       return h('div', { class: 'service-name-cell' }, [
-        h('span', {
-          class: 'service-badge',
-          style: {
-            backgroundColor: `${getServiceBadgeColor(svc)}15`,
-            color: getServiceBadgeColor(svc),
-          }
-        }, getServiceBadgeLabel(svc)),
+        (() => {
+          const label = getServiceBadgeLabel(svc)
+          if (!label) return null
+          return h('span', {
+            class: 'service-badge',
+            style: {
+              backgroundColor: `${getServiceBadgeColor(svc)}15`,
+              color: getServiceBadgeColor(svc),
+            }
+          }, label)
+        })(),
         h('span', { class: 'service-name' }, svc.name),
       ])
     },
@@ -465,6 +528,7 @@ const columns = computed(() => {
     title: 'Local',
     key: 'local',
     width: 80,
+    minWidth: 100,
     render: (row: DataTableRow) => {
       if (row.type !== 'service') return null
       const svc = row.service
@@ -633,6 +697,33 @@ defineExpose({
 
 <template>
   <div class="service-table-container">
+    <!-- Batch Selection Toolbar -->
+    <Transition name="batch-toolbar-fade">
+      <div v-if="selectedServiceIds.size > 0" class="batch-selection-toolbar">
+        <div class="batch-info">
+          <NIcon :component="CheckmarkCircleOutline" :size="20" color="var(--accent)" />
+          <span class="batch-count">已选择 <strong>{{ selectedServiceIds.size }}</strong> 个服务</span>
+        </div>
+        <div class="batch-actions">
+          <NButton size="small" @click="selectedServiceIds.clear()">
+            取消选择
+          </NButton>
+          <NButton size="small" type="primary" @click="batchStartServices">
+            <template #icon><PlayOutline /></template>
+            批量启动
+          </NButton>
+          <NButton size="small" @click="batchStopServices">
+            <template #icon><StopOutline /></template>
+            批量停止
+          </NButton>
+          <NButton size="small" type="error" @click="openBatchDeleteModal">
+            <template #icon><TrashBinOutline /></template>
+            批量删除
+          </NButton>
+        </div>
+      </div>
+    </Transition>
+
     <NDataTable
       :columns="columns"
       :data="tableData"
@@ -684,6 +775,57 @@ defineExpose({
 <style scoped>
 .service-table-container {
   position: relative;
+}
+
+/* Batch Selection Toolbar */
+.batch-selection-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
+  border-radius: var(--r-md);
+  margin-bottom: var(--sp-3);
+  backdrop-filter: blur(8px);
+}
+
+.batch-info {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+.batch-count {
+  font-size: 14px;
+  color: var(--text-1);
+}
+
+.batch-count strong {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.batch-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+
+/* Batch toolbar animation */
+.batch-toolbar-fade-enter-active,
+.batch-toolbar-fade-leave-active {
+  transition: all var(--dur-2) var(--ease-out);
+}
+
+.batch-toolbar-fade-enter-from {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+
+.batch-toolbar-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-5px);
 }
 
 /* Workspace section */

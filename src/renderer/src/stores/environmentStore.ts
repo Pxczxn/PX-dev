@@ -4,6 +4,7 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import type { EnvironmentInfo, EnvironmentName } from '@shared/types'
+import { logger } from '@renderer/utils/logger'
 
 export const useEnvironmentStore = defineStore('environment', () => {
   const environments = ref<EnvironmentInfo[]>([])
@@ -16,7 +17,7 @@ export const useEnvironmentStore = defineStore('environment', () => {
       const { api } = await import('@renderer/api')
       environments.value = await api.environment.detect()
     } catch (err) {
-      console.error('Failed to detect environments:', err)
+      logger.error('EnvironmentStore', 'Failed to detect environments', err)
       environments.value = []
     } finally {
       loading.value = false
@@ -37,7 +38,7 @@ export const useEnvironmentStore = defineStore('environment', () => {
       }
       return info
     } catch (err) {
-      console.error(`Failed to detect ${name}:`, err)
+      logger.error('EnvironmentStore', `Failed to detect ${name}`, err)
       throw err
     }
   }

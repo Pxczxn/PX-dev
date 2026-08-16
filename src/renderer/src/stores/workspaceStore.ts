@@ -10,6 +10,7 @@ import type {
   WorkspaceDiscoveryOptions,
   WorkspaceDiscoveryResult,
 } from '@shared/types'
+import { logger } from '@renderer/utils/logger'
 
 export const useWorkspaceStore = defineStore('workspace', () => {
   const workspaces = ref<Workspace[]>([])
@@ -38,7 +39,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     try {
       workspaces.value = await api.workspace.list()
     } catch (err) {
-      console.error('Failed to fetch workspaces:', err)
+      logger.error('WorkspaceStore', 'Failed to fetch workspaces', err)
     } finally {
       loading.value = false
     }
@@ -49,7 +50,7 @@ export const useWorkspaceStore = defineStore('workspace', () => {
     try {
       services.value = await api.service.list(workspaceId)
     } catch (err) {
-      console.error('Failed to fetch services:', err)
+      logger.error('WorkspaceStore', 'Failed to fetch services', err)
     }
   }
 

@@ -25,6 +25,7 @@ import { api } from '@renderer/api'
 import { formatIpcError } from '@renderer/api/errors'
 import { buildServicePayload } from './servicePayload'
 import type { Service, HealthCheckConfig } from '@shared/types'
+import { logger } from '@renderer/utils/logger'
 
 // Form data interface (for create/edit)
 interface ServiceFormData {
@@ -148,7 +149,7 @@ async function selectDirectory(): Promise<void> {
       await scanDirectory(path)
     }
   } catch (err) {
-    console.error('[ServiceEditDrawer] selectDirectory failed:', err)
+    logger.error('ServiceEditDrawer', 'Failed to select directory', err)
     message.error(formatIpcError(err, '选择目录失败'))
     // 失败冷却：避免瞬时连点刷出多条无信息量提示
     await new Promise((resolve) => setTimeout(resolve, SELECT_DIR_FAIL_COOLDOWN_MS))
@@ -188,8 +189,8 @@ async function scanDirectory(path?: string): Promise<void> {
       message.info('未检测到已知项目类型')
     }
   } catch (err) {
+    logger.error('ServiceEditDrawer', 'Failed to scan directory', err)
     message.error('扫描失败')
-    console.error(err)
   } finally {
     scanning.value = false
   }
@@ -238,7 +239,7 @@ async function handleSave(): Promise<void> {
     emit('saved')
     emit('update:show', false)
   } catch (err) {
-    console.error('[ServiceEditDrawer] save failed:', err)
+    logger.error('ServiceEditDrawer', 'Failed to save service', err)
     message.error(formatSaveError(err))
   } finally {
     saving.value = false
@@ -254,79 +255,85 @@ async function handleSave(): Promise<void> {
   >
     <NDrawerContent :title="isEdit ? '编辑服务' : '添加服务'" closable>
       <NForm label-placement="top">
-        <!-- Basic -->
-        <NFormItem label="服务名称" required>
-          <NInput v-model:value="form.name" placeholder="例如：前端开发服务器" />
-        </NFormItem>
+        <NCollapse :default-expanded-names="['basic']" accordion>
+          <!-- 基本信息 -->
+          <NCollapseItem title="基本信息" name="basic">
+            <NFormItem label="服务名称" required>
+              <NInput v-model:value="form.name" placeholder="例如：前端开发服务器" />
+            </NFormItem>
 
-        <NFormItem label="服务类型" required>
-          <NSelect v-model:value="form.type" :options="serviceTypes" />
-        </NFormItem>
+            <NFormItem label="服务类型" required>
+              <NSelect v-model:value="form.type" :options="serviceTypes" />
+            </NFormItem>
 
-        <NFormItem label="角色分类" required>
-          <NSelect v-model:value="form.role" :options="serviceRoles" />
-        </NFormItem>
+            <NFormItem label="角色分类" required>
+              <NSelect v-model:value="form.role" :options="serviceRoles" />
+            </NFormItem>
 
-        <NFormItem label="工作目录" required>
-          <NSpace>
-            <NInput
-              v-model:value="form.cwd"
-              placeholder="选择或输入项目目录"
-              style="width: 340px;"
-            />
-            <NButton @click="selectDirectory" :loading="selectingDir" quaternary>
-              <template #icon><FolderOpenOutline /></template>
-            </NButton>
-            <NButton
-              v-if="form.cwd"
-              @click="scanDirectory()"
-              :loading="scanning"
-              quaternary
-            >
-              <template #icon><ScanOutline /></template>
-            </NButton>
-          </NSpace>
-        </NFormItem>
+            <NFormItem label="工作目录" required>
+              <NSpace>
+                <NInput
+                  v-model:value="form.cwd"
+                  placeholder="选择或输入项目目录"
+                  style="width: 340px;"
+                />
+                <NButton @click="selectDirectory" :loading="selectingDir" quaternary>
+                  <template #icon><FolderOpenOutline /></template>
+                </NButton>
+                <NButton
+                  v-if="form.cwd"
+                  @click="scanDirectory()"
+                  :loading="scanning"
+                  quaternary
+                >
+                  <template #icon><ScanOutline /></template>
+                </NButton>
+              </NSpace>
+            </NFormItem>
 
-        <NFormItem label="启动命令" required>
-          <NInput v-model:value="form.command" placeholder="例如：npm / pnpm / mvn" />
-        </NFormItem>
+            <NFormItem label="启动命令" required>
+              <NInput v-model:value="form.command" placeholder="例如：npm / pnpm / mvn" />
+            </NFormItem>
 
-        <NFormItem label="参数">
-          <NDynamicTags v-model:value="form.args" :max="20" />
-        </NFormItem>
+            <NFormItem label="参数">
+              <NDynamicTags v-model:value="form.args" :max="20" />
+            </NFormItem>
+          </NCollapseItem>
 
-        <NFormItem label="包管理器">
-          <NSelect v-model:value="form.packageManager" :options="packageManagers" clearable />
-        </NFormItem>
+          <!-- 运行配置 -->
+          <NCollapseItem title="运行配置" name="runtime">
+            <NFormItem label="包管理器">
+              <NSelect v-model:value="form.packageManager" :options="packageManagers" clearable />
+            </NFormItem>
 
-        <NFormItem label="端口">
-          <NInputNumber
-            v-model:value="form.port"
-            :min="1"
-            :max="65535"
-            placeholder="服务监听端口"
-            style="width: 200px;"
-          />
-        </NFormItem>
+            <NFormItem label="端口">
+              <NInputNumber
+                v-model:value="form.port"
+                :min="1"
+                :max="65535"
+                placeholder="服务监听端口"
+                style="width: 200px;"
+              />
+            </NFormItem>
 
-        <NFormItem label="启用">
-          <NSwitch v-model:value="form.enabled" />
-        </NFormItem>
+            <NFormItem label="启用">
+              <NSwitch v-model:value="form.enabled" />
+            </NFormItem>
 
-        <!-- Advanced -->
-        <NCollapse>
-          <NCollapseItem title="高级设置" name="advanced">
             <NFormItem label="启动延迟 (ms)">
               <NInputNumber
                 v-model:value="form.startupDelay"
                 :min="0"
                 :max="60000"
                 :step="500"
+                placeholder="服务启动延迟时间"
                 style="width: 200px;"
               />
             </NFormItem>
+          </NCollapseItem>
 
+          <!-- 高级选项 -->
+          <NCollapseItem title="高级选项" name="advanced">
             <NFormItem label="自动打开浏览器">
               <NSwitch v-model:value="form.autoOpenBrowser" />
             </NFormItem>

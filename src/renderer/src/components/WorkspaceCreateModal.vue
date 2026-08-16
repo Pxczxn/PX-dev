@@ -19,6 +19,7 @@ import { FolderOpenOutline } from '@vicons/ionicons5'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { api } from '@renderer/api'
 import { formatIpcError } from '@renderer/api/errors'
+import { logger } from '@renderer/utils/logger'
 
 const props = defineProps<{
   show: boolean
@@ -105,7 +106,7 @@ async function handleSelectRootPath(): Promise<void> {
       form.value.name = segments[segments.length - 1] ?? ''
     }
   } catch (err) {
-    console.error('[WorkspaceCreateModal] selectDirectory failed:', err)
+    logger.error('WorkspaceCreateModal', 'Failed to select directory', err)
     // 带上真实原因，避免出现无信息量的「选择目录失败」
     message.error(formatIpcError(err, '选择目录失败'))
     // 失败后短暂冷却，防止用户连点刷出多条重复提示
@@ -174,7 +175,7 @@ async function handleSave(): Promise<void> {
     message.success('工作区已创建')
     emit('update:show', false)
   } catch (err) {
-    console.error('[WorkspaceCreateModal] create failed:', err)
+    logger.error('WorkspaceCreateModal', 'Failed to create workspace', err)
     message.error(formatCreateError(err))
   } finally {
     saving.value = false

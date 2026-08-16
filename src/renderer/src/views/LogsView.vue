@@ -12,12 +12,14 @@ import {
   NScrollbar,
   NEmpty,
   useMessage,
+  NVirtualList,
 } from 'naive-ui'
 import { CopyOutline, TrashOutline, DownloadOutline, SearchOutline } from '@vicons/ionicons5'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { useLogStore } from '@renderer/stores/logStore'
 import { useLogStream } from '@renderer/composables/useLogStream'
 import { api } from '@renderer/api'
+import { logger } from '@renderer/utils/logger'
 
 const message = useMessage()
 const workspaceStore = useWorkspaceStore()
@@ -77,8 +79,8 @@ async function clearLogs(): Promise<void> {
     logStore.clearLogs(activeServiceId.value)
     message.success('日志已清空')
   } catch (err) {
+    logger.error('LogsView', 'Failed to clear logs', err)
     message.error('清空失败')
-    console.error(err)
   }
 }
 
@@ -104,8 +106,8 @@ async function exportLogs(): Promise<void> {
       message.success('日志已导出')
     }
   } catch (err) {
+    logger.error('LogsView', 'Failed to export logs', err)
     message.error('导出失败')
-    console.error(err)
   }
 }
 
@@ -171,20 +173,26 @@ function formatTime(ts: number): string {
             <div v-if="currentLogs.length === 0" class="log-empty">
               <NEmpty size="small" description="暂无日志" />
             </div>
-            <div v-else class="log-content">
-              <div
-                v-for="(entry, idx) in currentLogs"
-                :key="idx"
-                class="log-line"
-                :class="{ 'log-stderr': entry.stream === 'stderr' }"
-              >
-                <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
-                <span class="log-stream" :class="{ 'stream-err': entry.stream === 'stderr' }">
-                  {{ entry.stream === 'stderr' ? 'ERR' : 'OUT' }}
-                </span>
-                <span class="log-text">{{ entry.text }}</span>
-              </div>
-            </div>
+            <NVirtualList
+              v-else
+              :items="currentLogs"
+              :item-size="28"
+              :item-resizable="true"
+              class="log-content"
+            >
+              <template #default="{ item: entry }">
+                <div
+                  class="log-line"
+                  :class="{ 'log-stderr': entry.stream === 'stderr' }"
+                >
+                  <span class="log-time">{{ formatTime(entry.timestamp) }}</span>
+                  <span class="log-stream" :class="{ 'stream-err': entry.stream === 'stderr' }">
+                    {{ entry.stream === 'stderr' ? 'ERR' : 'OUT' }}
+                  </span>
+                  <span class="log-text">{{ entry.text }}</span>
+                </div>
+              </template>
+            </NVirtualList>
           </NScrollbar>
         </NTabPane>
       </NTabs>
@@ -235,14 +243,15 @@ function formatTime(ts: number): string {
 .log-content {
   font-family: var(--font-mono);
   font-size: 12px;
-  line-height: 1.6;
+  line-height: 1.8;
 }
 
 .log-line {
   display: flex;
   gap: var(--sp-2);
-  padding: 1px 4px;
+  padding: 3px 6px;
   border-radius: 2px;
+  transition: background var(--dur-1) var(--ease-out);
 }
 
 .log-line:hover {

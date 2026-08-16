@@ -47,6 +47,7 @@ import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { api } from '@renderer/api'
 import { formatIpcError } from '@renderer/api/errors'
 import { toServiceInputs } from './discoveryPayload'
+import { logger } from '@renderer/utils/logger'
 
 const props = defineProps<{
   show: boolean
@@ -124,7 +125,7 @@ function selectOnlyBackend(): void {
   selectedIds.value = projects.value
     .filter((p) => {
       const t = p.suggestedServiceType ?? p.projectType
-      return t === 'backend' || t === 'node' || t === 'java'
+      return t !== 'frontend'
     })
     .map((p) => p.id)
   updateAllSelectedState()
@@ -138,7 +139,7 @@ function updateAllSelectedState(): void {
 const isOnlyFrontendSelected = computed(() => {
   if (projects.value.length === 0) return false
   const frontendIds = projects.value
-    .filter((p) => p.suggestedServiceType === 'frontend' || p.projectType === 'frontend')
+    .filter((p) => p.suggestedServiceType === 'frontend')
     .map((p) => p.id)
   if (frontendIds.length === 0) return false
   return frontendIds.every((id) => selectedIds.value.includes(id)) && selectedIds.value.length === frontendIds.length
@@ -149,7 +150,7 @@ const isOnlyBackendSelected = computed(() => {
   const backendIds = projects.value
     .filter((p) => {
       const t = p.suggestedServiceType ?? p.projectType
-      return t === 'backend' || t === 'node' || t === 'java'
+      return t !== 'frontend'
     })
     .map((p) => p.id)
   if (backendIds.length === 0) return false
@@ -242,7 +243,7 @@ async function handleSelectRootPath(): Promise<void> {
     if (!path) return
     rootPathInput.value = path
   } catch (err) {
-    console.error('[WorkspaceDiscoveryModal] selectDirectory failed:', err)
+    logger.error('WorkspaceDiscoveryModal', 'Failed to select directory', err)
     message.error(formatIpcError(err, '选择目录失败'))
     await new Promise((resolve) => setTimeout(resolve, SELECT_FAIL_COOLDOWN_MS))
   } finally {
@@ -283,7 +284,7 @@ async function handleScan(): Promise<void> {
       message.info('未在该目录下发现可识别的项目')
     }
   } catch (err) {
-    console.error('[WorkspaceDiscoveryModal] discover failed:', err)
+    logger.error('WorkspaceDiscoveryModal', 'Failed to discover projects', err)
     errorText.value = formatIpcError(err, '扫描失败')
     phase.value = 'error'
   }
@@ -307,7 +308,7 @@ async function handleApply(): Promise<void> {
     emit('applied', created.length)
     emit('update:show', false)
   } catch (err) {
-    console.error('[WorkspaceDiscoveryModal] applyDiscovery failed:', err)
+    logger.error('WorkspaceDiscoveryModal', 'Failed to apply discovery', err)
     message.error(formatIpcError(err, '批量添加服务失败'))
     // 失败后回到 review，让用户可以调整勾选后重试
     phase.value = 'review'

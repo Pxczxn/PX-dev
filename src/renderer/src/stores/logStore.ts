@@ -5,6 +5,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { LogEntry } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/constants/defaults'
+import { logger } from '@renderer/utils/logger'
 
 export const useLogStore = defineStore('log', () => {
   // Map<serviceId, LogEntry[]>
@@ -61,7 +62,7 @@ export const useLogStore = defineStore('log', () => {
       buffers.value.set(serviceId, history)
       buffers.value = new Map(buffers.value)
     } catch (err) {
-      console.error('Failed to load log history:', err)
+      logger.error('LogStore', 'Failed to load log history', err)
     }
   }
 
@@ -74,7 +75,7 @@ export const useLogStore = defineStore('log', () => {
       subscribed.value.add(serviceId)
       subscribed.value = new Set(subscribed.value)
     } catch (err) {
-      console.error('Failed to subscribe to logs:', err)
+      logger.error('LogStore', 'Failed to subscribe to logs', err)
     }
   }
 
@@ -87,7 +88,7 @@ export const useLogStore = defineStore('log', () => {
       subscribed.value.delete(serviceId)
       subscribed.value = new Set(subscribed.value)
     } catch (err) {
-      console.error('Failed to unsubscribe from logs:', err)
+      logger.error('LogStore', 'Failed to unsubscribe from logs', err)
     }
   }
 

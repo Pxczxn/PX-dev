@@ -87,6 +87,10 @@ export interface PxDevAPI {
     getVersion: () => Promise<string>
     quit: () => Promise<{ success: boolean }>
     minimize: () => Promise<{ success: boolean }>
+    /** 获取当前数据目录路径 */
+    getDataPath: () => Promise<string>
+    /** 打开目录选择器，更改数据目录（会触发重启） */
+    selectDataPath: () => Promise<{ success: boolean; newPath?: string; reason?: string }>
   }
   // Event listeners
   events: {
@@ -166,6 +170,8 @@ export function createPxDevAPI(): PxDevAPI {
       getVersion: () => ipcRenderer.invoke(IPC_CHANNELS.APP_GET_VERSION),
       quit: () => ipcRenderer.invoke(IPC_CHANNELS.APP_QUIT),
       minimize: () => ipcRenderer.invoke(IPC_CHANNELS.APP_MINIMIZE),
+      getDataPath: () => ipcRenderer.invoke(IPC_CHANNELS.APP_GET_DATA_PATH),
+      selectDataPath: () => ipcRenderer.invoke(IPC_CHANNELS.APP_SELECT_DATA_PATH),
     },
     events: {
       onLogBatch: (callback) => {

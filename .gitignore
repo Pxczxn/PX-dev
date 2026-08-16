@@ -1,17 +1,96 @@
+# === Electron + Vue + TypeScript 项目 ===
+
+# 依赖
 node_modules/
+
+# 构建产物
 out/
-release/
 dist/
+release/
+*.tsbuildinfo
+.eslintcache
+
+# 缓存
 .vite-cache/
+.cache/
+.nox/
+
+# 测试与覆盖率
+coverage/
+playwright-report/
+test-results/
+*.lcov
+
+# 日志
 *.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# 运行时数据
+*.pid
+*.tmp
+*.temp
+.runtime/
+logs/
+uploads/
+temp/
+tmp/
+
+# 环境变量（保留示例文件）
+.env
+.env.*
+!.env.example
+
+# IDE / 编辑器
+.idea/
+.vscode/
+*.iml
+*.iws
+*.ipr
+.classpath
+.project
+.settings/
+.factorypath
+
+# AI / Agent 工作目录
+.agents/
+.agent/
+.codex/
+.claude/
+.cursor/
+.reasonix/
+.workbuddy/
+.zcode/
+
+# 文档（仅保留仓库根目录 README.md）
+docs/
+*.md
+!/README.md
+
+# 操作系统
 .DS_Store
 Thumbs.db
-coverage/
-.env.local
-.env.*.local
-.workbuddy/
-docs/*
-.idea/
-resources/tray-icon.png
+Desktop.ini
+ehthumbs.db
 
-!docs/system_design.md
+# === 项目特定 ===
+
+# 临时图标文件（原始设计稿，不是源码）
+图标.png
+
+# 图标生成脚本（开发辅助脚本，不是构建必需）
+generate_tray_icon.py
+
+# 优化报告（临时文档，不是项目文档）
+OPTIMIZATION_*.md
+ICON_*.md
+TRAY_ICON_*.md
+
+# build 目录中的 icon.* 应该提交（构建必需资源）
+# resources 目录中的 tray-icon.png 应该提交（运行时必需资源）
+# 但已有历史忽略规则，保持向后兼容：
+resources/TRAY_ICON_NEEDED.md
+build/icon-with-bg.png
+

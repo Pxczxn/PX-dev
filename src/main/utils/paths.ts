@@ -3,12 +3,19 @@
 
 import { app } from 'electron'
 import { join, resolve } from 'path'
+import { getDataPathFromRegistry } from './registry'
 
 /**
  * Get the user data directory for PX Dev.
- * Uses Electron's app.getPath('userData') in production.
+ * Priority:
+ * 1. Registry value (HKCU\Software\PXDev\DataPath) — user-configured custom path
+ * 2. Electron's app.getPath('userData') — portable default or system default
  */
 export function getConfigDir(): string {
+  const registryPath = getDataPathFromRegistry()
+  if (registryPath) {
+    return registryPath
+  }
   return app.getPath('userData')
 }
 

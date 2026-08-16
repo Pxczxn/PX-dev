@@ -5,6 +5,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ProcessRuntime, ProcessStatus, RuntimeEndpointSnapshot } from '@shared/types'
+import { logger } from '@renderer/utils/logger'
 
 export const useRuntimeStore = defineStore('runtime', () => {
   // Map<serviceId, ProcessRuntime>
@@ -62,7 +63,7 @@ export const useRuntimeStore = defineStore('runtime', () => {
       }
       runtimes.value = new Map(runtimes.value)
     } catch (err) {
-      console.error('Failed to sync runtimes:', err)
+      logger.error('RuntimeStore', 'Failed to sync runtimes', err)
     }
   }
 
@@ -117,7 +118,7 @@ export const useRuntimeStore = defineStore('runtime', () => {
       }
       endpointSnapshots.value = new Map(endpointSnapshots.value)
     } catch (err) {
-      console.error('Failed to sync endpoint snapshots:', err)
+      logger.error('RuntimeStore', 'Failed to sync endpoint snapshots', err)
     }
   }
 
