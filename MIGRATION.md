@@ -1,61 +1,115 @@
 # Electron → Tauri 2 迁移状态
 
-## Phase 2: Config & Settings ✅ 完成
+## Phase 2: Config & Settings ✅ 完成（增强版）
 
-**实施日期**：2026-08-16
+**实施日期**：2026-08-16  
+**最后更新**：2026-08-16（架构增强）
 
 ### 已实现
 
-- ✅ tauri-plugin-store 2.4.4 集成
-- ✅ Settings 类型定义（Rust）
+- ✅ tauri-plugin-store 2.4.4 集成（精确版本锁定）
+- ✅ **ConfigStore 统一配置管理层**
+- ✅ **类型安全的 Settings（Theme/CloseBehavior 枚举）**
+- ✅ **SettingsPatch 类型（替代手写 match）**
+- ✅ **Settings 校验（范围检查：maxLogLines 500-50000, startupInterval 0-30000）**
 - ✅ `app.getSettings()` - 读取配置
 - ✅ `app.updateSettings(input)` - 更新配置
 - ✅ `app.getVersion()` - 获取应用版本
-- ✅ 配置文件存储（config.json）
-- ✅ 默认配置初始化
-- ✅ 单元测试（8 tests）
+- ✅ 配置自动初始化（version + settings + workspaces + services）
+- ✅ Rust 单元测试（7 tests）
+- ✅ TypeScript 单元测试（8 tests）
 
 ### 技术方案
 
-**存储层**：
-- 使用官方 `tauri-plugin-store` 2.4.4
-- 存储格式：JSON（与 Electron 兼容）
-- 存储位置：Tauri app_data_dir
-- 文件名：`config.json`
+**架构分层**：
+```
+Commands (app.rs)
+    ↓
+ConfigStore (统一配置管理)
+    ↓ ensure_initialized()
+    ↓ get_settings()
+    ↓ update_settings(patch)
+tauri-plugin-store
+    ↓
+config.json
+```
 
-**Rust 类型**：
+**ConfigStore 职责**：
+- ✅ 统一配置初始化（确保 version/settings/workspaces/services 完整）
+- ✅ 防止部分初始化问题（无论先调用 get 还是 update）
+- ✅ Settings 校验和默认值应用
+- ✅ 为 Phase 3 Workspace/Service CRUD 提供基础
+
+**类型安全**：
 ```rust
-pub struct Settings {
-    pub theme: String,
-    pub close_behavior: String,
-    pub max_log_lines: u32,
-    pub start_minimized: bool,
-    pub auto_restore_last_session: bool,
-    pub startup_interval: u32,
-    pub show_timestamp: bool,
-    pub default_browser: String,
-    pub data_path: Option<String>,
+// 枚举类型，编译期检查
+pub enum Theme { Light, Dark, System }
+pub enum CloseBehavior { Tray, Quit, Ask }
+
+// SettingsPatch：部分更新专用类型
+pub struct SettingsPatch {
+    pub theme: Option<Theme>,
+    pub close_behavior: Option<CloseBehavior>,
+    pub max_log_lines: Option<u32>,
+    ...
+}
+
+// 自动校验
+impl Settings {
+    pub fn validate(&mut self) -> Result<(), String> {
+        // maxLogLines: 500 ~ 50000
+        // startupInterval: 0 ~ 30000
+    }
 }
 ```
 
-**Commands**：
-- `get_settings` → 读取配置，首次启动返回默认值
-- `update_settings` → 合并更新配置
-- `get_app_version` → 返回 Cargo.toml 中的版本号
+**serde 自动转换**：
+```rust
+#[derive(Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]  // Rust snake_case ↔ JSON camelCase
+pub struct Settings { ... }
 
-### Tauri Adapter 更新
+#[serde(rename_all = "lowercase")]  // Theme::Dark → "dark"
+pub enum Theme { ... }
+```
 
-```typescript
-app: {
-  getSettings: async () => await invoke('get_settings'),
-  updateSettings: async (input) => await invoke('update_settings', { input }),
-  getVersion: async () => await invoke<string>('get_app_version'),
-  quit: notImplemented('app.quit'),              // Phase 2 未实现
-  minimize: notImplemented('app.minimize'),      // Phase 2 未实现
-  getDataPath: notImplemented('app.getDataPath'), // Phase 2 未实现
-  selectDataPath: notImplemented('app.selectDataPath'), // Phase 2 未实现
+### Commands 实现
+
+**简化的 Command 层**（不再关心初始化逻辑）：
+```rust
+#[tauri::command]
+pub async fn get_settings(app: AppHandle) -> Result<Settings, String> {
+    let store = ConfigStore::open(&app)?;
+    store.get_settings()  // 自动 ensure_initialized
+}
+
+#[tauri::command]
+pub async fn update_settings(
+    app: AppHandle,
+    input: serde_json::Value,
+) -> Result<Settings, String> {
+    let store = ConfigStore::open(&app)?;
+    let patch: SettingsPatch = serde_json::from_value(input)?;
+    store.update_settings(patch)  // 自动校验 + 保存
 }
 ```
+
+### 测试覆盖
+
+**Rust 单元测试（7 tests）**：
+- ✅ Settings 默认值
+- ✅ maxLogLines 范围校验（500-50000）
+- ✅ startupInterval 范围校验（0-30000）
+- ✅ SettingsPatch 应用逻辑
+- ✅ Theme/CloseBehavior serde 序列化
+- ✅ ConfigStore version 常量
+
+**TypeScript 单元测试（8 tests）**：
+- ✅ getSettings 调用
+- ✅ updateSettings 调用
+- ✅ getVersion 调用
+- ✅ 未实现方法抛出 NotImplementedError
+- ✅ Phase 1 px_ping 仍然工作
 
 ---
 
@@ -179,21 +233,25 @@ App.vue → api.system.ping() → Platform Adapter → invoke('px_ping') → Rus
 
 ## 文件变更清单
 
-### Phase 2 新增文件（4 个）
+### Phase 2 新增文件（6 个）
 
-**Rust 类型和 Commands**：
-- `src-tauri/src/types.rs` — Settings 和 AppConfig 类型定义
-- `src-tauri/src/commands/app.rs` — get_settings, update_settings, get_app_version
+**Rust 架构层**：
+- `src-tauri/src/types.rs` — Settings/SettingsPatch/Theme/CloseBehavior 类型 + 校验逻辑 + 7 个单元测试
+- `src-tauri/src/config/mod.rs` — 配置管理模块入口
+- `src-tauri/src/config/store.rs` — ConfigStore 统一配置管理层
+
+**Commands**：
+- `src-tauri/src/commands/app.rs` — get_settings, update_settings, get_app_version（简化版，委托给 ConfigStore）
 
 **单元测试**：
 - `tests/unit/api/platform/app.test.ts` — app adapter 测试（8 tests）
 
 **依赖更新**：
-- `src-tauri/Cargo.toml` — 新增 tauri-plugin-store 2.4.4
+- `src-tauri/Cargo.toml` — 精确锁定 tauri-plugin-store =2.4.4
 
 ### Phase 2 修改文件（4 个）
 
-- `src-tauri/src/lib.rs` — 注册 store plugin 和新 commands
+- `src-tauri/src/lib.rs` — 导出 config 模块
 - `src-tauri/src/commands/mod.rs` — 导出 app module
 - `src/renderer/src/api/platform/tauri.ts` — 实现 app.{getSettings, updateSettings, getVersion}
 - `tests/unit/api/platform/tauri.test.ts` — 更新测试（app 方法已实现）
@@ -277,12 +335,57 @@ serde_json = "1"
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]  // 序列化时转换为 camelCase
 pub struct Settings {
-    pub theme: String,
-    pub close_behavior: String,  // → closeBehavior
-    pub max_log_lines: u32,      // → maxLogLines
+    pub theme: Theme,                // → theme
+    pub close_behavior: CloseBehavior, // → closeBehavior
+    pub max_log_lines: Option<u32>,  // → maxLogLines
     ...
 }
 ```
+
+### 11. Phase 2: ConfigStore 统一初始化（新增）
+- 所有 Commands 通过 `ConfigStore::open()` 访问配置
+- `ensure_initialized()` 确保 version/settings/workspaces/services 完整
+- 防止部分初始化问题（无论先调用哪个 API）
+- 为 Phase 3 Workspace/Service CRUD 提供统一入口
+
+### 12. Phase 2: 类型安全校验优于运行时检查（新增）
+```rust
+// ✅ 正确：编译期类型检查
+pub enum Theme { Light, Dark, System }
+pub enum CloseBehavior { Tray, Quit, Ask }
+
+// ❌ 错误：运行时字符串检查
+pub struct Settings {
+    pub theme: String,  // 可能是 "西红柿炒鸡蛋"
+    pub close_behavior: String,
+}
+```
+
+### 13. Phase 2: SettingsPatch 专用类型（新增）
+```rust
+// 部分更新专用类型，所有字段 Option
+pub struct SettingsPatch {
+    pub theme: Option<Theme>,
+    pub max_log_lines: Option<u32>,
+    ...
+}
+
+impl SettingsPatch {
+    pub fn apply_to(&self, settings: &mut Settings) {
+        // 只更新提供的字段
+    }
+}
+```
+
+### 14. Phase 2: Settings 范围校验（新增）
+- maxLogLines: 500 ~ 50000（与 Electron Zod 校验一致）
+- startupInterval: 0 ~ 30000（与 Electron Zod 校验一致）
+- 非法值拒绝并返回错误，保持 Electron/Tauri 语义一致
+
+### 15. Phase 2: Rust 单元测试与 npm test 平等（新增）
+- `cargo test` — 7 tests（types + config）
+- `npm test` — 24 tests（platform + api）
+- 后续每个 Phase 都需要同时维护两侧测试
 
 ---
 
