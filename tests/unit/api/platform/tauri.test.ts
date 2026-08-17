@@ -93,11 +93,38 @@ describe('Tauri Adapter', () => {
     expect(invoke).toHaveBeenCalledWith('delete_service', { id: 'svc-1' })
   })
 
-  it('throws NotImplementedError for process methods', () => {
+  it('calls process management commands correctly', async () => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    vi.mocked(invoke).mockResolvedValue({})
+
     const adapter = createTauriAdapter()
 
-    expect(() => adapter.process.start('service-id')).toThrow(NotImplementedError)
-    expect(() => adapter.process.start('service-id')).toThrow('process.start is not implemented')
+    await adapter.process.start('svc-1')
+    expect(invoke).toHaveBeenCalledWith('start_process', { serviceId: 'svc-1' })
+
+    await adapter.process.stop('svc-1')
+    expect(invoke).toHaveBeenCalledWith('stop_process', { serviceId: 'svc-1' })
+
+    await adapter.process.restart('svc-1')
+    expect(invoke).toHaveBeenCalledWith('restart_process', { serviceId: 'svc-1' })
+
+    await adapter.process.forceKill('svc-1')
+    expect(invoke).toHaveBeenCalledWith('force_kill_process', { serviceId: 'svc-1' })
+
+    await adapter.process.getRuntime('svc-1')
+    expect(invoke).toHaveBeenCalledWith('get_process_runtime', { serviceId: 'svc-1' })
+
+    await adapter.process.getRuntime()
+    expect(invoke).toHaveBeenCalledWith('get_process_runtime', { serviceId: undefined })
+  })
+
+  it('throws NotImplementedError for unimplemented process methods', () => {
+    const adapter = createTauriAdapter()
+
+    // Phase 4A: start, stop, restart, forceKill, getRuntime are implemented
+    // Only test unimplemented methods
+    expect(() => adapter.process.startWorkspace('ws-1')).toThrow(NotImplementedError)
+    expect(() => adapter.process.startWorkspace('ws-1')).toThrow('process.startWorkspace is not implemented')
   })
 
   it('throws NotImplementedError for log methods', () => {

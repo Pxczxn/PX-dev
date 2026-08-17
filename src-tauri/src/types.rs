@@ -1,6 +1,53 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+// ============ Process Runtime ============
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ProcessStatus {
+    Stopped,
+    Starting,
+    Running,
+    Stopping,
+    Exited,
+    Failed,
+    Unknown,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessRuntime {
+    pub service_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    pub status: ProcessStatus,
+    pub ready: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub started_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stopped_at: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+impl ProcessRuntime {
+    pub fn new(service_id: String) -> Self {
+        Self {
+            service_id,
+            pid: None,
+            status: ProcessStatus::Stopped,
+            ready: false,
+            started_at: None,
+            stopped_at: None,
+            exit_code: None,
+            error: None,
+        }
+    }
+}
+
 // ============ Settings Enums ============
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
