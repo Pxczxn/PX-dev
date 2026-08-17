@@ -43,11 +43,54 @@ describe('Tauri Adapter', () => {
     expect(() => adapter.workspace.discover({ rootPath: '/test' })).toThrow('workspace.discover is not implemented')
   })
 
-  it('throws NotImplementedError for unimplemented service methods', () => {
+  it('calls list_services with workspaceId parameter', async () => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    vi.mocked(invoke).mockResolvedValue([])
+
     const adapter = createTauriAdapter()
 
-    // Phase 3: list, create, update, delete are now implemented
-    // No unimplemented methods in Phase 3, skip this test
+    // Test with workspaceId
+    await adapter.service.list('ws-123')
+    expect(invoke).toHaveBeenCalledWith('list_services', { workspaceId: 'ws-123' })
+
+    // Test without workspaceId
+    await adapter.service.list()
+    expect(invoke).toHaveBeenCalledWith('list_services', { workspaceId: undefined })
+  })
+
+  it('calls workspace CRUD commands correctly', async () => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    vi.mocked(invoke).mockResolvedValue({})
+
+    const adapter = createTauriAdapter()
+
+    await adapter.workspace.list()
+    expect(invoke).toHaveBeenCalledWith('list_workspaces')
+
+    await adapter.workspace.create({ name: 'Test' })
+    expect(invoke).toHaveBeenCalledWith('create_workspace', { input: { name: 'Test' } })
+
+    await adapter.workspace.update({ id: 'ws-1', name: 'Updated' })
+    expect(invoke).toHaveBeenCalledWith('update_workspace', { input: { id: 'ws-1', name: 'Updated' } })
+
+    await adapter.workspace.delete('ws-1')
+    expect(invoke).toHaveBeenCalledWith('delete_workspace', { id: 'ws-1' })
+  })
+
+  it('calls service CRUD commands correctly', async () => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    vi.mocked(invoke).mockResolvedValue({})
+
+    const adapter = createTauriAdapter()
+
+    await adapter.service.create({ workspaceId: 'ws-1', name: 'Test' })
+    expect(invoke).toHaveBeenCalledWith('create_service', { input: { workspaceId: 'ws-1', name: 'Test' } })
+
+    await adapter.service.update({ id: 'svc-1', name: 'Updated' })
+    expect(invoke).toHaveBeenCalledWith('update_service', { input: { id: 'svc-1', name: 'Updated' } })
+
+    await adapter.service.delete('svc-1')
+    expect(invoke).toHaveBeenCalledWith('delete_service', { id: 'svc-1' })
   })
 
   it('throws NotImplementedError for process methods', () => {

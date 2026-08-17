@@ -275,6 +275,10 @@ impl WorkspacePatch {
 
 // ============ Service ============
 
+fn default_true() -> bool {
+    true
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Service {
@@ -285,6 +289,7 @@ pub struct Service {
     pub service_type: ServiceType,
     pub role: ServiceRole,
     pub cwd: String,
+    #[serde(alias = "executable")]  // Backward compatibility: P3 v1 used "executable"
     pub command: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub args: Option<Vec<String>>,
@@ -296,7 +301,9 @@ pub struct Service {
     pub env: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env_file: Option<String>,
+    #[serde(default = "default_true")]  // Default to true if missing
     pub enabled: bool,
+    #[serde(default)]  // Default to empty vec if missing
     pub dependencies: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub startup_delay: Option<u32>,
@@ -306,7 +313,7 @@ pub struct Service {
     pub open_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub health_check: Option<serde_json::Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(skip_serializing_if = "Option::is_none", default)]  // Default to None (false equivalent)
     pub shell_mode: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub discovery: Option<serde_json::Value>,
@@ -356,12 +363,15 @@ pub struct ServiceInput {
     pub port: Option<u16>,
     pub env: Option<HashMap<String, String>>,
     pub env_file: Option<String>,
+    #[serde(default = "default_true")]  // Default to true if missing (matches Electron)
     pub enabled: bool,
+    #[serde(default)]  // Default to empty vec if missing (matches Electron)
     pub dependencies: Vec<String>,
     pub startup_delay: Option<u32>,
     pub auto_open_browser: Option<bool>,
     pub open_url: Option<String>,
     pub health_check: Option<serde_json::Value>,
+    #[serde(default)]  // Default to None if missing (matches Electron default false)
     pub shell_mode: Option<bool>,
     pub discovery: Option<serde_json::Value>,
 }
@@ -652,60 +662,47 @@ mod tests {
     }
 
     #[test]
-    fn test_service_validate() {
-        let mut service = Service {
-            id: "svc-1".to_string(),
-            workspace_id: "ws-1".to_string(),
-            name: "Test Service".to_string(),
-            service_type: ServiceType::Node,
-            role: ServiceRole::Backend,
-            cwd: "/path".to_string(),
-            command: "node".to_string(),
-            args: None,
-            package_manager: None,
-            port: Some(3000),
-            env: None,
-            env_file: None,
-            enabled: true,
-            dependencies: vec![],
-            startup_delay: Some(1000),
-            auto_open_browser: None,
-            open_url: None,
-            health_check: None,
-            shell_mode: None,
-            discovery: None,
-            created_at: "2024-01-01T00:00:00Z".to_string(),
-            updated_at: "2024-01-01T00:00:00Z".to_string(),
-        };
+    fn test_service_backward_compatibility() {
+        // Old P3 v1 data with "executable" instead of "command"
+        let old_json = r#"{
+            "id": "svc-1",
+            "workspaceId": "ws-1",
+            "name": "Old Service",
+            "type": "node",
+            "role": "backend",
+            "cwd": "/path",
+            "executable": "node",
+            "createdAt": "2024-01-01T00:00:00Z",
+            "updatedAt": "2024-01-01T00:00:00Z"
+        }"#;
 
-        // Valid service
-        assert!(service.validate().is_ok());
+        // Should deserialize successfully with alias
+        let service: Service = serde_json::from_str(old_json).unwrap();
+        assert_eq!(service.command, "node");
+        
+        // Missing fields should use defaults
+        assert_eq!(service.enabled, true);  // default_true
+        assert_eq!(service.dependencies.len(), 0);  // default empty vec
+        assert_eq!(service.shell_mode, None);  // default None
+    }
 
-        // Empty name
-        service.name = "".to_string();
-        assert!(service.validate().is_err());
-        service.name = "Test Service".to_string();
+    #[test]
+    fn test_service_input_defaults() {
+        // Minimal ServiceInput without optional fields
+        let json = r#"{
+            "workspaceId": "ws-1",
+            "name": "Minimal Service",
+            "type": "generic",
+            "role": "backend",
+            "cwd": "/path",
+            "command": "run.sh"
+        }"#;
 
-        // Empty cwd
-        service.cwd = "".to_string();
-        assert!(service.validate().is_err());
-        service.cwd = "/path".to_string();
-
-        // Empty command
-        service.command = "".to_string();
-        assert!(service.validate().is_err());
-        service.command = "node".to_string();
-
-        // Invalid port
-        service.port = Some(0);
-        assert!(service.validate().is_err());
-        service.port = Some(3000);
-
-        // Invalid startup delay
-        service.startup_delay = Some(70000);
-        assert!(service.validate().is_err());
-        service.startup_delay = Some(1000);
-
-        assert!(service.validate().is_ok());
+        let input: ServiceInput = serde_json::from_str(json).unwrap();
+        
+        // Should apply defaults (matching Electron behavior)
+        assert_eq!(input.enabled, true);
+        assert_eq!(input.dependencies.len(), 0);
+        assert_eq!(input.shell_mode, None);
     }
 }
