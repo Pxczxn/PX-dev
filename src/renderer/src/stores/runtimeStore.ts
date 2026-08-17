@@ -127,13 +127,6 @@ export const useRuntimeStore = defineStore('runtime', () => {
   function startListening(): void {
     if (unsubRuntimeChanged) return
 
-    // Phase 1: Tauri 模式下跳过事件监听
-    if (isTauri()) {
-      logger.warn('RuntimeStore', 'Event listeners not available in Tauri Phase 1')
-      return
-    }
-
-    // Lazy import to ensure window.pxDev is available
     import('@renderer/api/events').then(({ onRuntimeChanged, onRuntimeEndpoints }) => {
       unsubRuntimeChanged = onRuntimeChanged((serviceId, runtime) => {
         updateRuntime(serviceId, runtime)
@@ -142,7 +135,7 @@ export const useRuntimeStore = defineStore('runtime', () => {
       if (!unsubRuntimeEndpoints) {
         unsubRuntimeEndpoints = onRuntimeEndpoints((serviceId, snapshot) => {
           if (snapshot === null) {
-            // 服务已停止 → 清空端点
+            // Service stopped → clear endpoints
             endpointSnapshots.value.delete(serviceId)
           } else {
             endpointSnapshots.value.set(serviceId, snapshot)
@@ -150,6 +143,8 @@ export const useRuntimeStore = defineStore('runtime', () => {
           endpointSnapshots.value = new Map(endpointSnapshots.value)
         })
       }
+    }).catch((err) => {
+      logger.error('RuntimeStore', 'Failed to setup runtime event listeners', err)
     })
   }
 

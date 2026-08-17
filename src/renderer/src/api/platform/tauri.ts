@@ -1,6 +1,41 @@
 import { invoke } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { notImplemented } from './types'
 import type { PxDevClient } from '@shared/types/client'
+import type { LogEntry, ProcessRuntime } from '@shared/types'
+
+/**
+ * Creates a deferred listener wrapper to handle async listen() with sync contract
+ * This ensures cleanup happens even if component unmounts before Promise resolves
+ */
+function createDeferredListener<T>(
+  eventName: string,
+  callback: (payload: T) => void
+): () => void {
+  let disposed = false
+  let unlisten: UnlistenFn | undefined
+
+  listen<T>(eventName, (event) => {
+    callback(event.payload)
+  })
+    .then((fn) => {
+      if (disposed) {
+        fn()
+      } else {
+        unlisten = fn
+      }
+    })
+    .catch((err) => {
+      console.error(`Failed to listen to ${eventName}:`, err)
+    })
+
+  return () => {
+    disposed = true
+    if (unlisten) {
+      unlisten()
+    }
+  }
+}
 
 /**
  * 创建抛出 NotImplementedError 的命名空间代理
@@ -26,7 +61,14 @@ export function createTauriAdapter(): PxDevClient {
       ping: async () => await invoke<string>('px_ping'),
       openPath: notImplemented('system.openPath'),
       openExternal: notImplemented('system.openExternal'),
-      selectDirectory: notImplemented('system.selectDirectory'),
+      selectDirectory: async () => {
+        const { open } = await import('@tauri-apps/plugin-dialog')
+        const selected = await open({
+          directory: true,
+          multiple: false,
+        })
+        return selected || null
+      },
       scanDirectory: notImplemented('system.scanDirectory'),
       showItemInFolder: notImplemented('system.showItemInFolder'),
       detectProject: notImplemented('system.detectProject'),
@@ -65,9 +107,42 @@ export function createTauriAdapter(): PxDevClient {
       stopWorkspace: notImplemented('process.stopWorkspace'),
       stopAll: notImplemented('process.stopAll'),
     },
-    log: createNotImplementedNamespace('log'),
+    log: {
+      subscribe: async (serviceId: string) => {
+        await invoke('log_subscribe', { serviceId })
+        return { success: true }
+      },
+      unsubscribe: async (serviceId: string) => {
+        await invoke('log_unsubscribe', { serviceId })
+        return { success: true }
+      },
+      clear: async (serviceId: string) => {
+        await invoke('log_clear', { serviceId })
+        return { success: true }
+      },
+      history: async (serviceId: string, limit?: number) => 
+        await invoke<LogEntry[]>('log_history', { serviceId, limit }),
+      export: async (serviceId: string, savePath?: string) => 
+        await invoke<{ success: boolean; path?: string }>('log_export', { serviceId, savePath }),
+    },
     environment: createNotImplementedNamespace('environment'),
     port: createNotImplementedNamespace('port'),
-    events: createNotImplementedNamespace('events'),
+    events: {
+      onLogBatch: (callback) => {
+        return createDeferredListener<{ serviceId: string; entries: LogEntry[] }>(
+          'log:batch',
+          callback
+        )
+      },
+      onRuntimeChanged: (callback) => {
+        return createDeferredListener<{ serviceId: string; runtime: ProcessRuntime }>(
+          'runtime:changed',
+          callback
+        )
+      },
+      onRuntimeEndpoints: () => {
+        return notImplemented('events.onRuntimeEndpoints')
+      },
+    },
   } as PxDevClient
 }

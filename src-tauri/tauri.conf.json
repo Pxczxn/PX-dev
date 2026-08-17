@@ -13,8 +13,8 @@
     "windows": [
       {
         "title": "PX Dev",
-        "width": 1280,
-        "height": 800,
+        "width": 1000,
+        "height": 700,
         "minWidth": 960,
         "minHeight": 600,
         "resizable": true,

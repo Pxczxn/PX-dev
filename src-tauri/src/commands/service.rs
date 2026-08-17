@@ -1,6 +1,7 @@
 use tauri::{AppHandle, State};
 use crate::config::ConfigStore;
 use crate::process::ProcessManager;
+use crate::log::LogManager;
 use crate::types::{Service, ServiceInput, ServicePatch};
 
 #[tauri::command]
@@ -51,6 +52,7 @@ pub async fn update_service(
 pub async fn delete_service(
     app: AppHandle,
     manager: State<'_, ProcessManager>,
+    log_manager: State<'_, LogManager>,
     id: String,
 ) -> Result<serde_json::Value, String> {
     // Stop process if running
@@ -58,6 +60,9 @@ pub async fn delete_service(
     
     // Remove from tracking
     manager.remove_service(&id);
+    
+    // Remove logs
+    log_manager.remove_service(&id);
     
     // Delete from config
     let store = ConfigStore::open(&app)?;

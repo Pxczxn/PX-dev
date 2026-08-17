@@ -48,6 +48,49 @@ impl ProcessRuntime {
     }
 }
 
+// ============ Runtime Event Payload ============
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RuntimeChangedPayload {
+    pub service_id: String,
+    pub runtime: ProcessRuntime,
+}
+
+// ============ Log Entry ============
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LogLevel {
+    Stdout,
+    Stderr,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LogEntry {
+    pub service_id: String,
+    pub level: LogLevel,
+    pub message: String,
+    pub timestamp: u64,
+}
+
+impl LogEntry {
+    pub fn new(service_id: String, level: LogLevel, message: String) -> Self {
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+        
+        Self {
+            service_id,
+            level,
+            message,
+            timestamp,
+        }
+    }
+}
+
 // ============ Settings Enums ============
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

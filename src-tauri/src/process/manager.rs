@@ -1,16 +1,35 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::{ShellExt, process::CommandEvent};
-use crate::types::{ProcessRuntime, ProcessStatus};
+use crate::types::{ProcessRuntime, ProcessStatus, RuntimeChangedPayload};
 use crate::config::ConfigStore;
+use crate::log::{LogManager, LogEntry, LogStream};
 use super::{build_command, kill_process_tree};
+
+const EVENT_RUNTIME_CHANGED: &str = "runtime:changed";
+
+/// Emit runtime changed event with proper payload structure
+fn emit_runtime_changed(app: &AppHandle, service_id: &str, runtime: &ProcessRuntime) {
+    let payload = RuntimeChangedPayload {
+        service_id: service_id.to_string(),
+        runtime: runtime.clone(),
+    };
+    let _ = app.emit(EVENT_RUNTIME_CHANGED, &payload);
+}
 
 pub struct ManagedProcess {
     pub runtime: ProcessRuntime,
     pub pid: Option<u32>,
     pub generation: u64,  // Unique ID for this process instance
+    pub termination_intent: Option<TerminationIntent>,  // Why we're stopping
+}
+
+#[derive(Clone, Copy, PartialEq)]
+pub enum TerminationIntent {
+    Stop,       // User requested stop
+    ForceKill,  // User requested force kill
 }
 
 pub struct ProcessManager {
@@ -39,9 +58,14 @@ impl ProcessManager {
         let store = ConfigStore::open(app)?;
         let service = store.get_service(service_id)?;
 
-        // Check if already running or stopping
+        // Allocate generation for this process instance
+        let generation = self.allocate_generation();
+
+        // Atomic check-and-reserve: within same critical section
         {
-            let processes = self.processes.lock().unwrap();
+            let mut processes = self.processes.lock().unwrap();
+            
+            // Check if already running or stopping
             if let Some(managed) = processes.get(service_id) {
                 if matches!(
                     managed.runtime.status,
@@ -50,13 +74,36 @@ impl ProcessManager {
                     return Err(format!("Service {} is already running or stopping", service.name));
                 }
             }
+            
+            // Atomically reserve with Starting status
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_millis() as u64;
+
+            let mut runtime = ProcessRuntime::new(service_id.to_string());
+            runtime.status = ProcessStatus::Starting;
+            runtime.started_at = Some(now);
+
+            processes.insert(
+                service_id.to_string(),
+                ManagedProcess {
+                    runtime: runtime.clone(),
+                    pid: None,
+                    generation,
+                    termination_intent: None,
+                },
+            );
         }
+        // Lock released here - other start() calls will now see Starting
 
         // Validate cwd
         if service.cwd.trim().is_empty() {
+            // Cleanup: remove the reserved entry
+            let mut processes = self.processes.lock().unwrap();
+            processes.remove(service_id);
             return Err(format!("Service {} has no working directory configured", service.name));
         }
-
         // Build platform-specific command
         let built_cmd = build_command(&service);
 
@@ -75,64 +122,67 @@ impl ProcessManager {
             cmd
         };
 
-        // Allocate generation for this process instance
-        let generation = self.allocate_generation();
-
-        // Update status to starting
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-
-        let mut runtime = ProcessRuntime::new(service_id.to_string());
-        runtime.status = ProcessStatus::Starting;
-        runtime.started_at = Some(now);
-
-        {
-            let mut processes = self.processes.lock().unwrap();
-            processes.insert(
-                service_id.to_string(),
-                ManagedProcess {
-                    runtime: runtime.clone(),
-                    pid: None,
-                    generation,
-                },
-            );
-        }
-
         // Spawn process
         match cmd.spawn() {
             Ok((mut rx, child)) => {
                 let pid = child.pid();
                 
                 // Update runtime with pid and status
-                runtime.pid = Some(pid);
-                runtime.status = ProcessStatus::Running;
-                // Don't set ready=true yet - wait for health check (Phase 5)
-                runtime.ready = false;
-
                 {
                     let mut processes = self.processes.lock().unwrap();
                     if let Some(managed) = processes.get_mut(service_id) {
-                        managed.runtime = runtime.clone();
-                        managed.pid = Some(pid);
+                        // Verify generation to prevent race
+                        if managed.generation == generation {
+                            managed.runtime.pid = Some(pid);
+                            managed.runtime.status = ProcessStatus::Running;
+                            managed.runtime.ready = false; // Wait for health check (Phase 5)
+                            managed.pid = Some(pid);
+                        } else {
+                            // Race condition: another start() won, cleanup this spawn
+                            // (This should be very rare with atomic reserve)
+                            return Err("Process reservation race detected".to_string());
+                        }
                     }
                 }
-
                 // Spawn task to listen for process events
                 let service_id_clone = service_id.to_string();
                 let processes_clone = self.processes.clone();
                 let expected_generation = generation;
                 
+                // Clone app handle for the async task
+                let app_handle = app.clone();
+                
                 tauri::async_runtime::spawn(async move {
+                    // Get LogManager inside the task
+                    let log_manager = app_handle.state::<LogManager>();
+                    
                     while let Some(event) = rx.recv().await {
                         match event {
+                            CommandEvent::Stdout(data) => {
+                                // Convert bytes to string using lossy conversion for safety
+                                let text = String::from_utf8_lossy(&data).to_string();
+                                let entry = LogEntry::new(
+                                    service_id_clone.clone(),
+                                    LogStream::Stdout,
+                                    text,
+                                );
+                                log_manager.append(entry);
+                            }
+                            CommandEvent::Stderr(data) => {
+                                // Convert bytes to string using lossy conversion for safety
+                                let text = String::from_utf8_lossy(&data).to_string();
+                                let entry = LogEntry::new(
+                                    service_id_clone.clone(),
+                                    LogStream::Stderr,
+                                    text,
+                                );
+                                log_manager.append(entry);
+                            }
                             CommandEvent::Terminated(payload) => {
                                 let mut processes = processes_clone.lock().unwrap();
                                 if let Some(managed) = processes.get_mut(&service_id_clone) {
                                     // Check generation to avoid stale events
                                     if managed.generation != expected_generation {
-                                        // This is a stale event from an old process instance, ignore
                                         continue;
                                     }
                                     
@@ -144,15 +194,27 @@ impl ProcessManager {
                                     managed.runtime.stopped_at = Some(now);
                                     managed.runtime.exit_code = payload.code;
                                     managed.runtime.ready = false;
+                                    managed.runtime.pid = None; // Clear PID
+                                    managed.pid = None;
                                     
-                                    // Determine final status
-                                    if managed.runtime.status == ProcessStatus::Stopping {
+                                    // Determine final status based on termination intent
+                                    if let Some(_intent) = managed.termination_intent {
+                                        // User requested stop/forceKill - always mark as Stopped
                                         managed.runtime.status = ProcessStatus::Stopped;
-                                    } else if payload.code == Some(0) {
-                                        managed.runtime.status = ProcessStatus::Exited;
+                                        managed.termination_intent = None; // Clear intent
                                     } else {
-                                        managed.runtime.status = ProcessStatus::Failed;
+                                        // Natural exit
+                                        if payload.code == Some(0) {
+                                            managed.runtime.status = ProcessStatus::Exited;
+                                        } else {
+                                            managed.runtime.status = ProcessStatus::Failed;
+                                        }
                                     }
+                                    
+                                    // Emit runtime changed event
+                                    let runtime = managed.runtime.clone();
+                                    drop(processes); // Release lock before emitting
+                                    emit_runtime_changed(&app_handle, &service_id_clone, &runtime);
                                 }
                             }
                             CommandEvent::Error(error) => {
@@ -163,29 +225,33 @@ impl ProcessManager {
                                         continue;
                                     }
                                     
-                                    managed.runtime.status = ProcessStatus::Failed;
+                                    // Error event doesn't mean process died - just log it
                                     managed.runtime.error = Some(error);
-                                    managed.runtime.ready = false;
                                 }
-                            }
-                            CommandEvent::Stdout(_) | CommandEvent::Stderr(_) => {
-                                // Phase 5: Forward to LogManager
                             }
                             _ => {}
                         }
                     }
                 });
 
+                // Return current runtime
+                let runtime = {
+                    let processes = self.processes.lock().unwrap();
+                    processes.get(service_id).unwrap().runtime.clone()
+                };
+                
+                // Emit runtime changed event
+                emit_runtime_changed(&app, service_id, &runtime);
+                
                 Ok(runtime)
             }
             Err(e) => {
-                runtime.status = ProcessStatus::Failed;
-                runtime.error = Some(format!("Failed to spawn process: {}", e));
-
-                {
-                    let mut processes = self.processes.lock().unwrap();
-                    if let Some(managed) = processes.get_mut(service_id) {
-                        managed.runtime = runtime.clone();
+                // Cleanup: remove the reserved entry on spawn failure
+                let mut processes = self.processes.lock().unwrap();
+                if let Some(managed) = processes.get_mut(service_id) {
+                    if managed.generation == generation {
+                        managed.runtime.status = ProcessStatus::Failed;
+                        managed.runtime.error = Some(format!("Failed to spawn process: {}", e));
                     }
                 }
 
@@ -252,11 +318,12 @@ impl ProcessManager {
             managed.pid.ok_or_else(|| format!("Service {} has no PID", service_id))?
         };
 
-        // Update status to stopping
+        // Update status to stopping and set intent
         {
             let mut processes = self.processes.lock().unwrap();
             if let Some(managed) = processes.get_mut(service_id) {
                 managed.runtime.status = ProcessStatus::Stopping;
+                managed.termination_intent = Some(TerminationIntent::Stop);
             }
         }
 
@@ -317,11 +384,12 @@ impl ProcessManager {
             managed.pid.ok_or_else(|| format!("Service {} has no PID", service_id))?
         };
 
-        // Update status to stopping BEFORE killing
+        // Update status to stopping BEFORE killing and set intent
         {
             let mut processes = self.processes.lock().unwrap();
             if let Some(managed) = processes.get_mut(service_id) {
                 managed.runtime.status = ProcessStatus::Stopping;
+                managed.termination_intent = Some(TerminationIntent::ForceKill);
             }
         }
 
@@ -402,6 +470,20 @@ impl ProcessManager {
         for service_id in service_ids {
             self.stop_if_running(app, service_id).await?;
         }
+        Ok(())
+    }
+
+    /// Force kill all running processes (used on app exit)
+    pub async fn force_kill_all(&self, app: &AppHandle) -> Result<(), String> {
+        let service_ids: Vec<String> = {
+            let processes = self.processes.lock().unwrap();
+            processes.keys().cloned().collect()
+        };
+
+        for service_id in service_ids {
+            let _ = self.force_kill(app, &service_id).await; // Ignore errors during shutdown
+        }
+
         Ok(())
     }
 }

@@ -113,12 +113,6 @@ export const useLogStore = defineStore('log', () => {
   function startListening(): void {
     if (unsubLogBatch) return
 
-    // Phase 1: Tauri 模式下跳过事件监听
-    if (isTauri()) {
-      logger.warn('LogStore', 'Event listeners not available in Tauri Phase 1')
-      return
-    }
-
     import('@renderer/api/events').then(({ onLogBatch }) => {
       unsubLogBatch = onLogBatch((serviceId, entries) => {
         appendBatch(serviceId, entries)
