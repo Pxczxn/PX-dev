@@ -127,11 +127,16 @@ describe('Tauri Adapter', () => {
     expect(() => adapter.process.startWorkspace('ws-1')).toThrow('process.startWorkspace is not implemented')
   })
 
-  it('throws NotImplementedError for log methods', () => {
-    const adapter = createTauriAdapter()
+  it('implements log methods (Phase 5)', async () => {
+    const { invoke } = await import('@tauri-apps/api/core')
+    vi.mocked(invoke).mockResolvedValue({ success: true })
 
-    expect(() => adapter.log.subscribe('service-id')).toThrow(NotImplementedError)
-    expect(() => adapter.log.subscribe('service-id')).toThrow('log.subscribe is not implemented')
+    const adapter = createTauriAdapter()
+    
+    // log methods are implemented and return promises
+    await expect(adapter.log.subscribe('service-id')).resolves.toEqual({ success: true })
+    await expect(adapter.log.unsubscribe('service-id')).resolves.toEqual({ success: true })
+    await expect(adapter.log.clear('service-id')).resolves.toEqual({ success: true })
   })
 
   it('throws NotImplementedError for environment methods', () => {
@@ -154,8 +159,10 @@ describe('Tauri Adapter', () => {
     expect(() => adapter.system.openPath('/path')).toThrow(NotImplementedError)
     expect(() => adapter.system.openPath('/path')).toThrow('system.openPath is not implemented')
     
-    expect(() => adapter.system.selectDirectory()).toThrow(NotImplementedError)
-    expect(() => adapter.system.selectDirectory()).toThrow('system.selectDirectory is not implemented')
+    // selectDirectory is now implemented using @tauri-apps/plugin-dialog
+    // Test other unimplemented methods instead
+    expect(() => adapter.system.scanDirectory('/path')).toThrow(NotImplementedError)
+    expect(() => adapter.system.scanDirectory('/path')).toThrow('system.scanDirectory is not implemented')
   })
 
   it('throws NotImplementedError for unimplemented app methods', () => {
@@ -167,11 +174,19 @@ describe('Tauri Adapter', () => {
     expect(() => adapter.app.quit()).toThrow('app.quit is not implemented')
   })
 
-  it('throws NotImplementedError for event methods', () => {
+  it('implements event listener methods (Phase 5)', () => {
     const adapter = createTauriAdapter()
 
-    expect(() => adapter.events.onLogBatch(() => {})).toThrow(NotImplementedError)
-    expect(() => adapter.events.onLogBatch(() => {})).toThrow('events.onLogBatch is not implemented')
+    // onLogBatch and onRuntimeChanged return cleanup functions
+    const cleanupLog = adapter.events.onLogBatch(() => {})
+    expect(typeof cleanupLog).toBe('function')
+    
+    const cleanupRuntime = adapter.events.onRuntimeChanged(() => {})
+    expect(typeof cleanupRuntime).toBe('function')
+    
+    // onRuntimeEndpoints should throw immediately (Phase 6 not implemented)
+    expect(() => adapter.events.onRuntimeEndpoints(() => {})).toThrow(NotImplementedError)
+    expect(() => adapter.events.onRuntimeEndpoints(() => {})).toThrow('events.onRuntimeEndpoints is not implemented')
   })
 
   it('NotImplementedError includes method name and phase', () => {

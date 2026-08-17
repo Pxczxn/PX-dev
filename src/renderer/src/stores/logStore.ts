@@ -6,7 +6,6 @@ import { ref, computed } from 'vue'
 import type { LogEntry } from '@shared/types'
 import { DEFAULT_SETTINGS } from '@shared/constants/defaults'
 import { logger } from '@renderer/utils/logger'
-import { isTauri } from '@renderer/platform/detect'
 
 export const useLogStore = defineStore('log', () => {
   // Map<serviceId, LogEntry[]>
@@ -60,7 +59,27 @@ export const useLogStore = defineStore('log', () => {
     const { api } = await import('@renderer/api')
     try {
       const history = await api.log.history(serviceId, limit)
-      buffers.value.set(serviceId, history)
+      
+      // Use appendBatch to merge with any entries received during loading
+      // This prevents race condition where batch arrives before history returns
+      const existing = buffers.value.get(serviceId) || []
+      
+      // Merge and deduplicate by timestamp (history is older, batch is newer)
+      const merged = [...history]
+      const historyTimestamps = new Set(history.map(e => e.timestamp))
+      
+      // Only append entries from existing that aren't in history
+      for (const entry of existing) {
+        if (!historyTimestamps.has(entry.timestamp)) {
+          merged.push(entry)
+        }
+      }
+      
+      // Sort by timestamp and apply maxLines limit
+      merged.sort((a, b) => a.timestamp - b.timestamp)
+      const trimmed = merged.slice(-maxLines.value)
+      
+      buffers.value.set(serviceId, trimmed)
       buffers.value = new Map(buffers.value)
     } catch (err) {
       logger.error('LogStore', 'Failed to load log history', err)
@@ -70,13 +89,22 @@ export const useLogStore = defineStore('log', () => {
   /** Subscribe to a service's log stream */
   async function subscribe(serviceId: string): Promise<void> {
     if (subscribed.value.has(serviceId)) return
+    
+    // Mark as subscribed first to prevent duplicate calls
+    subscribed.value.add(serviceId)
+    subscribed.value = new Set(subscribed.value)
+    
     const { api } = await import('@renderer/api')
     try {
+      // Subscribe backend first, then load history
+      // This ensures we don't miss any logs during the window
       await api.log.subscribe(serviceId)
-      subscribed.value.add(serviceId)
-      subscribed.value = new Set(subscribed.value)
+      await loadHistory(serviceId, maxLines.value)
     } catch (err) {
       logger.error('LogStore', 'Failed to subscribe to logs', err)
+      // Rollback subscription on error
+      subscribed.value.delete(serviceId)
+      subscribed.value = new Set(subscribed.value)
     }
   }
 
@@ -104,9 +132,19 @@ export const useLogStore = defineStore('log', () => {
     activeServiceId.value = serviceId
   }
 
-  /** Update max lines limit */
+  /** Update max lines limit and trim existing buffers */
   function setMaxLines(max: number): void {
     maxLines.value = max
+    
+    // Trim all existing buffers to new limit
+    for (const [serviceId, entries] of buffers.value.entries()) {
+      if (entries.length > max) {
+        buffers.value.set(serviceId, entries.slice(-max))
+      }
+    }
+    
+    // Trigger reactivity
+    buffers.value = new Map(buffers.value)
   }
 
   /** Start listening to log:batch events */

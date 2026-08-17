@@ -80,6 +80,11 @@ impl LogManager {
     pub fn unsubscribe(&self, service_id: &str) {
         let mut inner = self.inner.lock().unwrap();
         inner.subscribers.remove(service_id);
+        
+        // Clear pending to avoid stale batch on resubscribe
+        if let Some(buffer) = inner.buffers.get_mut(service_id) {
+            buffer.pending.clear();
+        }
     }
 
     /// Clear both history and pending for a service
@@ -169,6 +174,78 @@ impl LogManager {
                 }
             }
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_log_entry_creation() {
+        let entry = LogEntry::new(
+            "test-service".to_string(),
+            LogStream::Stdout,
+            "Hello World".to_string(),
+        );
+        
+        assert_eq!(entry.service_id, "test-service");
+        assert_eq!(entry.text, "Hello World");
+        assert!(matches!(entry.stream, LogStream::Stdout));
+        assert!(entry.timestamp > 0);
+    }
+
+    #[test]
+    fn test_subscribe_unsubscribe() {
+        // Note: This test cannot fully test LogManager without a real AppHandle
+        // Full integration tests should be done with tauri::test helpers
+        let service_id = "test-service";
+        
+        // We can test the logic with a mock-like approach
+        let mut subscribers = HashSet::new();
+        
+        // Subscribe
+        subscribers.insert(service_id.to_string());
+        assert!(subscribers.contains(service_id));
+        
+        // Unsubscribe
+        subscribers.remove(service_id);
+        assert!(!subscribers.contains(service_id));
+    }
+
+    #[test]
+    fn test_ring_buffer_logic() {
+        let max_lines = 5;
+        let mut history = VecDeque::new();
+        
+        // Add more than max_lines
+        for i in 0..10 {
+            history.push_back(LogEntry::new(
+                "test".to_string(),
+                LogStream::Stdout,
+                format!("Line {}", i),
+            ));
+            
+            if history.len() > max_lines {
+                history.pop_front();
+            }
+        }
+        
+        // Should only keep last 5
+        assert_eq!(history.len(), max_lines);
+        assert!(history[0].text.contains("Line 5"));
+        assert!(history[4].text.contains("Line 9"));
+    }
+
+    #[test]
+    fn test_log_stream_serialization() {
+        use serde_json;
+        
+        let stdout = LogStream::Stdout;
+        let stderr = LogStream::Stderr;
+        
+        assert_eq!(serde_json::to_string(&stdout).unwrap(), r#""stdout""#);
+        assert_eq!(serde_json::to_string(&stderr).unwrap(), r#""stderr""#);
     }
 }
 

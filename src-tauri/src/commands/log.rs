@@ -1,4 +1,4 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 use crate::log::{LogManager, LogEntry};
 
 #[tauri::command]
@@ -39,6 +39,7 @@ pub async fn log_history(
 
 #[tauri::command]
 pub async fn log_export(
+    app: AppHandle,
     service_id: String,
     save_path: Option<String>,
     log_manager: State<'_, LogManager>,
@@ -59,10 +60,23 @@ pub async fn log_export(
     let path = if let Some(p) = save_path {
         p
     } else {
-        // Use dialog to get save path - requires app handle
-        // For now, return error if no path provided
-        // TODO: Integrate tauri_plugin_dialog properly with app handle
-        return Err("Save path is required (dialog integration pending)".to_string());
+        // Use dialog to get save path
+        let file_path = app.dialog()
+            .file()
+            .set_title("Export Logs")
+            .set_file_name(&format!("{}.log", service_id))
+            .blocking_save_file();
+        
+        match file_path {
+            Some(FilePath::Path(p)) => p.to_string_lossy().to_string(),
+            Some(FilePath::Url(u)) => u.to_string(),
+            None => {
+                // User cancelled
+                return Ok(serde_json::json!({
+                    "success": false
+                }));
+            }
+        }
     };
     
     // Format logs in Electron-compatible format

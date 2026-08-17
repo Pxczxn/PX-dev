@@ -6,7 +6,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import type { ProcessRuntime, ProcessStatus, RuntimeEndpointSnapshot } from '@shared/types'
 import { logger } from '@renderer/utils/logger'
-import { isTauri } from '@renderer/platform/detect'
 
 export const useRuntimeStore = defineStore('runtime', () => {
   // Map<serviceId, ProcessRuntime>
@@ -123,29 +122,34 @@ export const useRuntimeStore = defineStore('runtime', () => {
     }
   }
 
-  /** Start listening to runtime:changed + runtime:endpoints events */
+  /** Start listening to runtime:changed events (Phase 5) */
   function startListening(): void {
     if (unsubRuntimeChanged) return
 
-    import('@renderer/api/events').then(({ onRuntimeChanged, onRuntimeEndpoints }) => {
+    import('@renderer/api/events').then(({ onRuntimeChanged }) => {
       unsubRuntimeChanged = onRuntimeChanged((serviceId, runtime) => {
         updateRuntime(serviceId, runtime)
       })
-
-      if (!unsubRuntimeEndpoints) {
-        unsubRuntimeEndpoints = onRuntimeEndpoints((serviceId, snapshot) => {
-          if (snapshot === null) {
-            // Service stopped → clear endpoints
-            endpointSnapshots.value.delete(serviceId)
-          } else {
-            endpointSnapshots.value.set(serviceId, snapshot)
-          }
-          endpointSnapshots.value = new Map(endpointSnapshots.value)
-        })
-      }
     }).catch((err) => {
       logger.error('RuntimeStore', 'Failed to setup runtime event listeners', err)
     })
+  }
+
+  /** Start listening to runtime:endpoints events (Phase 6 - not yet implemented) */
+  function startEndpointsListening(): void {
+    if (unsubRuntimeEndpoints) return
+
+    // Phase 6: Uncomment when runtime:endpoints is implemented
+    // import('@renderer/api/events').then(({ onRuntimeEndpoints }) => {
+    //   unsubRuntimeEndpoints = onRuntimeEndpoints((serviceId, snapshot) => {
+    //     if (snapshot === null) {
+    //       endpointSnapshots.value.delete(serviceId)
+    //     } else {
+    //       endpointSnapshots.value.set(serviceId, snapshot)
+    //     }
+    //     endpointSnapshots.value = new Map(endpointSnapshots.value)
+    //   })
+    // })
   }
 
   /** Stop listening to events */

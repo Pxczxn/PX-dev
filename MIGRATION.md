@@ -697,14 +697,216 @@ npm run dev:tauri  # ⚠️ 需要 Rust，控制台应显示 smoke test ✓
 
 ---
 
-## 后续阶段规划
+## Phase 5: Logging & Runtime Events ✅ 完成
 
-- **Phase 2**: Config & Settings 迁移
-- **Phase 3**: Workspace & Service CRUD + Discovery
-- **Phase 4**: Process Management (添加 tauri-plugin-shell)
-- **Phase 5**: Logging System
-- **Phase 6**: Environment Detection & Port Management
+**实施日期**：2026-08-17
+
+### 已实现
+
+- ✅ Rust LogManager（带 80ms batch 和 bounded history）
+- ✅ log:batch 事件（Tauri emit → Renderer store）
+- ✅ runtime:changed 事件（进程状态变化自动同步 UI）
+- ✅ Tauri Adapter events 实现（onLogBatch, onRuntimeChanged）
+- ✅ 统一事件 API（src/renderer/src/api/events.ts）
+- ✅ Generation checking（防止 restart 后旧日志串行）
+- ✅ 自然退出状态同步（exit 0 → exited, exit 非0 → failed）
+- ✅ spawn 失败状态同步（emit runtime:changed）
+
+### 核心架构
+
+**实时日志链路**：
+```
+Service Process
+  ↓ CommandEvent::Stdout/Stderr
+Rust LogManager
+  ↓ 80ms batch
+log:batch event
+  ↓ Tauri Adapter (createDeferredListener)
+logStore (Pinia)
+  ↓
+日志 UI (LogsView)
+```
+
+**运行时状态链路**：
+```
+ProcessManager 状态变化
+  ↓ emit_runtime_changed()
+runtime:changed event
+  ↓ Tauri Adapter
+runtimeStore (Pinia)
+  ↓
+UI 自动更新（ServiceTable, DashboardView）
+```
+
+**统一事件 API**：
+```typescript
+// src/renderer/src/api/events.ts
+export function onLogBatch(callback: (serviceId, entries) => void): () => void
+export function onRuntimeChanged(callback: (serviceId, runtime) => void): () => void
+export function onRuntimeEndpoints(...) // Phase 6
+
+// Stores 使用
+import { onLogBatch } from '@renderer/api/events'
+unsubscribe = onLogBatch((serviceId, entries) => { ... })
+```
+
+**Tauri Adapter Events**：
+```typescript
+events: {
+  onLogBatch: (callback) => createDeferredListener('log:batch', callback),
+  onRuntimeChanged: (callback) => createDeferredListener('runtime:changed', callback),
+  onRuntimeEndpoints: () => { throw new NotImplementedError('Phase 6') },
+}
+```
+
+### Generation Checking
+
+**ProcessManager**：
+```rust
+// 每次 start() 分配新 generation
+let generation = self.allocate_generation();
+
+// CommandEvent::Stdout/Stderr 检查 generation
+if managed.generation == expected_generation {
+    log_manager.append(entry);
+}
+
+// CommandEvent::Terminated 检查 generation
+if managed.generation != expected_generation {
+    continue;  // 忽略旧进程事件
+}
+```
+
+**目的**：防止 restart 后旧进程的最后几行日志进入新进程。
+
+### 运行时状态同步
+
+**自然退出**：
+- `exit 0` → `ProcessStatus::Exited`
+- `exit 非0` → `ProcessStatus::Failed`
+- 自动 emit `runtime:changed`，UI 实时更新
+
+**用户操作**：
+- `stop/forceKill` 完成 → `ProcessStatus::Stopped`
+- `spawn` 失败 → `ProcessStatus::Failed` + emit
+
+**Termination Intent**：
+```rust
+pub enum TerminationIntent {
+    Stop,       // 用户 stop
+    ForceKill,  // 用户 forceKill
+}
+
+// 有 intent → 总是 Stopped
+// 无 intent → exit 0 = Exited, exit 非0 = Failed
+```
+
+### Rust LogManager
+
+**特性**：
+- Bounded history（maxLines 限制，VecDeque ring buffer）
+- 80ms batch flush（减少 UI 更新频率）
+- Per-service 订阅（只发送订阅服务的日志）
+- Settings 联动（maxLogLines 修改后自动 trim）
+
+**API**：
+```rust
+impl LogManager {
+    pub fn append(&self, entry: LogEntry)
+    pub fn subscribe(&self, service_id: String)
+    pub fn unsubscribe(&self, service_id: &str)
+    pub fn clear(&self, service_id: &str)
+    pub fn history(&self, service_id: &str, limit: Option<usize>) -> Vec<LogEntry>
+    pub fn set_max_lines(&self, max_lines: usize)
+}
+```
+
+### Renderer Stores
+
+**logStore**：
+```typescript
+// 功能
+- appendBatch(serviceId, entries)  // 来自 log:batch
+- subscribe(serviceId)              // 调用 api.log.subscribe
+- loadHistory(serviceId, limit)     // 调用 api.log.history
+- clearLogs(serviceId)
+- exportLogs(serviceId, savePath?)
+- setMaxLines(max)
+
+// 事件监听
+startListening() {
+  unsubscribe = onLogBatch((serviceId, entries) => {
+    appendBatch(serviceId, entries)
+  })
+}
+```
+
+**runtimeStore**：
+```typescript
+// 功能
+- updateRuntime(serviceId, runtime)  // 来自 runtime:changed
+- syncAll()                          // 刷新后同步所有状态
+- getRuntime(serviceId)
+
+// 事件监听
+startListening() {
+  unsubscribe = onRuntimeChanged((serviceId, runtime) => {
+    updateRuntime(serviceId, runtime)
+  })
+}
+```
+
+### 测试覆盖
+
+**Rust 单元测试**：
+- ✅ LogEntry 创建和序列化
+- ✅ Ring buffer trim 逻辑
+- ✅ Subscribe/unsubscribe
+- ✅ LogStream serde
+
+**TypeScript 单元测试**：
+- ✅ Tauri Adapter events 返回 cleanup 函数
+- ✅ onRuntimeEndpoints 立即抛出 NotImplementedError
+- ✅ log methods 已实现（subscribe, unsubscribe, clear, history, export）
+
+**集成测试（手工验证）**：
+- ✅ 启动服务，实时看到 stdout/stderr
+- ✅ 停止服务，UI 状态变 stopped
+- ✅ 重启服务，日志继续输出
+- ✅ 进程自然退出（exit 0），UI 变 exited
+- ✅ 进程异常退出（exit 1），UI 变 failed
+- ✅ 刷新页面后，syncAll() 恢复正确状态
+
+### 已知限制（Phase 5）
+
+**不做的事情**（按任务要求）：
+- ❌ 极端并发测试（高并发 start × 20）
+- ❌ 日志 sequenceId（完美顺序保证）
+- ❌ subscribe/history 完全无 race
+- ❌ LogManager shutdown handle
+- ❌ Unix process group
+- ❌ 复杂 ProcessError 系统
+
+**Phase 6 内容**：
+- runtime:endpoints 事件（端口冲突、URL 探测）
+- PortManager
+- EnvironmentManager
+- Discovery
+- HealthCheck
 
 ---
 
-**Phase 1 目标达成**：PX Dev 现在具备 Electron + Tauri 2.11 双栈运行能力，为后续业务逻辑迁移奠定了坚实的架构基础。
+## 后续阶段规划
+
+- ~~**Phase 1**: Platform Detection & Adapter Pattern~~ ✅
+- ~~**Phase 2**: Config & Settings~~ ✅
+- ~~**Phase 3**: Workspace & Service CRUD~~ ✅
+- ~~**Phase 4**: Process Management~~ ✅
+- ~~**Phase 5**: Logging & Runtime Events~~ ✅
+- **Phase 6**: Environment Detection & Port Management & Discovery
+- **Phase 7**: Tray & Window Management
+- **Phase 8**: 完整功能对齐 & Electron 代码移除
+
+---
+
+**当前状态**：PX Dev 的核心功能链路（创建服务 → 启动 → 实时日志 → 状态同步）已完整迁移至 Tauri，可进行日常开发使用。

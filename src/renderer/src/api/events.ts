@@ -3,12 +3,10 @@
 
 import type { LogEntry, ProcessRuntime, RuntimeEndpointSnapshot } from '@shared/types'
 
-// Lazy API accessor (avoid top-level import to prevent premature getApi() call)
-function getApi() {
-  if (typeof window !== 'undefined' && window.pxDev) {
-    return window.pxDev
-  }
-  throw new Error('window.pxDev is not available. Ensure preload script is loaded.')
+// Lazy API accessor using the unified adapter pattern
+async function getEventsApi() {
+  const { api } = await import('@renderer/api')
+  return api.events
 }
 
 /**
@@ -16,15 +14,27 @@ function getApi() {
  * Returns an unsubscribe function.
  *
  * Usage in setup():
- *   const unsubscribe = onLogBatch((payload) => { ... })
+ *   const unsubscribe = onLogBatch((serviceId, entries) => { ... })
  *   onUnmounted(() => unsubscribe())
  */
 export function onLogBatch(
   callback: (serviceId: string, entries: LogEntry[]) => void,
 ): () => void {
-  return getApi().events.onLogBatch((payload) => {
-    callback(payload.serviceId, payload.entries)
+  let cleanup: (() => void) | null = null
+  
+  getEventsApi().then((events) => {
+    cleanup = events.onLogBatch((payload) => {
+      callback(payload.serviceId, payload.entries)
+    })
+  }).catch((err) => {
+    console.error('Failed to setup log batch listener:', err)
   })
+  
+  return () => {
+    if (cleanup) {
+      cleanup()
+    }
+  }
 }
 
 /**
@@ -38,9 +48,21 @@ export function onLogBatch(
 export function onRuntimeChanged(
   callback: (serviceId: string, runtime: ProcessRuntime) => void,
 ): () => void {
-  return getApi().events.onRuntimeChanged((payload) => {
-    callback(payload.serviceId, payload.runtime)
+  let cleanup: (() => void) | null = null
+  
+  getEventsApi().then((events) => {
+    cleanup = events.onRuntimeChanged((payload) => {
+      callback(payload.serviceId, payload.runtime)
+    })
+  }).catch((err) => {
+    console.error('Failed to setup runtime changed listener:', err)
   })
+  
+  return () => {
+    if (cleanup) {
+      cleanup()
+    }
+  }
 }
 
 /**
@@ -52,7 +74,19 @@ export function onRuntimeChanged(
 export function onRuntimeEndpoints(
   callback: (serviceId: string, runtime: RuntimeEndpointSnapshot | null) => void,
 ): () => void {
-  return getApi().events.onRuntimeEndpoints((payload) => {
-    callback(payload.serviceId, payload.runtime)
+  let cleanup: (() => void) | null = null
+  
+  getEventsApi().then((events) => {
+    cleanup = events.onRuntimeEndpoints((payload) => {
+      callback(payload.serviceId, payload.runtime)
+    })
+  }).catch((err) => {
+    console.error('Failed to setup runtime endpoints listener:', err)
   })
+  
+  return () => {
+    if (cleanup) {
+      cleanup()
+    }
+  }
 }

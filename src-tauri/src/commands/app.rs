@@ -21,12 +21,15 @@ pub async fn update_settings(
     let patch: SettingsPatch = serde_json::from_value(input)
         .map_err(|e| format!("Invalid settings input: {}", e))?;
     
-    // Sync maxLogLines to LogManager if changed
-    if let Some(max_lines) = patch.max_log_lines {
+    // First persist settings (this may fail validation)
+    let settings = store.update_settings(patch)?;
+    
+    // Only sync to LogManager after successful persistence
+    if let Some(max_lines) = settings.max_log_lines {
         log_manager.set_max_lines(max_lines as usize);
     }
     
-    store.update_settings(patch)
+    Ok(settings)
 }
 
 #[tauri::command]

@@ -29,6 +29,13 @@ export const useSettingsStore = defineStore('settings', () => {
       const { api } = await import('@renderer/api')
       const updated = await api.app.updateSettings(patch)
       settings.value = updated
+      
+      // Sync maxLogLines to logStore if changed
+      if (patch.maxLogLines !== undefined && updated.maxLogLines !== undefined) {
+        const { useLogStore } = await import('./logStore')
+        const logStore = useLogStore()
+        logStore.setMaxLines(updated.maxLogLines)
+      }
     } catch (err) {
       logger.error('SettingsStore', 'Failed to update settings', err)
       throw err

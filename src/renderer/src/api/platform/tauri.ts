@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { notImplemented } from './types'
+import { notImplemented, NotImplementedError } from './types'
 import type { PxDevClient } from '@shared/types/client'
 import type { LogEntry, ProcessRuntime } from '@shared/types'
 
@@ -141,7 +141,7 @@ export function createTauriAdapter(): PxDevClient {
         )
       },
       onRuntimeEndpoints: () => {
-        return notImplemented('events.onRuntimeEndpoints')
+        throw new NotImplementedError('events.onRuntimeEndpoints', 'Phase 6')
       },
     },
   } as PxDevClient

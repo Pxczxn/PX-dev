@@ -62,7 +62,7 @@ impl ProcessManager {
         let generation = self.allocate_generation();
 
         // Atomic check-and-reserve: within same critical section
-        {
+        let runtime = {
             let mut processes = self.processes.lock().unwrap();
             
             // Check if already running or stopping
@@ -94,8 +94,11 @@ impl ProcessManager {
                     termination_intent: None,
                 },
             );
-        }
-        // Lock released here - other start() calls will now see Starting
+            
+            runtime
+        };
+        // Lock released here - emit Starting status
+        emit_runtime_changed(&app, service_id, &runtime);
 
         // Validate cwd
         if service.cwd.trim().is_empty() {
@@ -159,24 +162,48 @@ impl ProcessManager {
                     while let Some(event) = rx.recv().await {
                         match event {
                             CommandEvent::Stdout(data) => {
-                                // Convert bytes to string using lossy conversion for safety
-                                let text = String::from_utf8_lossy(&data).to_string();
-                                let entry = LogEntry::new(
-                                    service_id_clone.clone(),
-                                    LogStream::Stdout,
-                                    text,
-                                );
-                                log_manager.append(entry);
+                                // Check generation before processing stdout
+                                let should_process = {
+                                    let processes = processes_clone.lock().unwrap();
+                                    if let Some(managed) = processes.get(&service_id_clone) {
+                                        managed.generation == expected_generation
+                                    } else {
+                                        false
+                                    }
+                                };
+                                
+                                if should_process {
+                                    // Convert bytes to string using lossy conversion for safety
+                                    let text = String::from_utf8_lossy(&data).to_string();
+                                    let entry = LogEntry::new(
+                                        service_id_clone.clone(),
+                                        LogStream::Stdout,
+                                        text,
+                                    );
+                                    log_manager.append(entry);
+                                }
                             }
                             CommandEvent::Stderr(data) => {
-                                // Convert bytes to string using lossy conversion for safety
-                                let text = String::from_utf8_lossy(&data).to_string();
-                                let entry = LogEntry::new(
-                                    service_id_clone.clone(),
-                                    LogStream::Stderr,
-                                    text,
-                                );
-                                log_manager.append(entry);
+                                // Check generation before processing stderr
+                                let should_process = {
+                                    let processes = processes_clone.lock().unwrap();
+                                    if let Some(managed) = processes.get(&service_id_clone) {
+                                        managed.generation == expected_generation
+                                    } else {
+                                        false
+                                    }
+                                };
+                                
+                                if should_process {
+                                    // Convert bytes to string using lossy conversion for safety
+                                    let text = String::from_utf8_lossy(&data).to_string();
+                                    let entry = LogEntry::new(
+                                        service_id_clone.clone(),
+                                        LogStream::Stderr,
+                                        text,
+                                    );
+                                    log_manager.append(entry);
+                                }
                             }
                             CommandEvent::Terminated(payload) => {
                                 let mut processes = processes_clone.lock().unwrap();
@@ -247,13 +274,23 @@ impl ProcessManager {
             }
             Err(e) => {
                 // Cleanup: remove the reserved entry on spawn failure
-                let mut processes = self.processes.lock().unwrap();
-                if let Some(managed) = processes.get_mut(service_id) {
-                    if managed.generation == generation {
-                        managed.runtime.status = ProcessStatus::Failed;
-                        managed.runtime.error = Some(format!("Failed to spawn process: {}", e));
+                let runtime = {
+                    let mut processes = self.processes.lock().unwrap();
+                    if let Some(managed) = processes.get_mut(service_id) {
+                        if managed.generation == generation {
+                            managed.runtime.status = ProcessStatus::Failed;
+                            managed.runtime.error = Some(format!("Failed to spawn process: {}", e));
+                            managed.runtime.clone()
+                        } else {
+                            return Err(format!("Failed to start service {}: {}", service.name, e));
+                        }
+                    } else {
+                        return Err(format!("Failed to start service {}: {}", service.name, e));
                     }
-                }
+                };
+                
+                // Emit failure status
+                emit_runtime_changed(&app, service_id, &runtime);
 
                 Err(format!("Failed to start service {}: {}", service.name, e))
             }
@@ -319,13 +356,19 @@ impl ProcessManager {
         };
 
         // Update status to stopping and set intent
-        {
+        let runtime = {
             let mut processes = self.processes.lock().unwrap();
             if let Some(managed) = processes.get_mut(service_id) {
                 managed.runtime.status = ProcessStatus::Stopping;
                 managed.termination_intent = Some(TerminationIntent::Stop);
+                managed.runtime.clone()
+            } else {
+                return Err(format!("Service {} not found during stop", service_id));
             }
-        }
+        };
+        
+        // Emit Stopping status
+        emit_runtime_changed(_app, service_id, &runtime);
 
         // Try graceful termination first (no /F on Windows)
         if let Err(_e) = kill_process_tree(pid, false) {
@@ -344,21 +387,31 @@ impl ProcessManager {
                 tokio::time::sleep(Duration::from_millis(500)).await;
                 
                 // Update to stopped if still not updated
-                let mut processes = self.processes.lock().unwrap();
-                if let Some(managed) = processes.get_mut(service_id) {
-                    if managed.runtime.status == ProcessStatus::Stopping {
-                        let now = std::time::SystemTime::now()
-                            .duration_since(std::time::UNIX_EPOCH)
-                            .unwrap()
-                            .as_millis() as u64;
-                        
-                        managed.runtime.status = ProcessStatus::Stopped;
-                        managed.runtime.stopped_at = Some(now);
-                        managed.runtime.ready = false;
+                let runtime = {
+                    let mut processes = self.processes.lock().unwrap();
+                    if let Some(managed) = processes.get_mut(service_id) {
+                        if managed.runtime.status == ProcessStatus::Stopping {
+                            let now = std::time::SystemTime::now()
+                                .duration_since(std::time::UNIX_EPOCH)
+                                .unwrap()
+                                .as_millis() as u64;
+                            
+                            managed.runtime.status = ProcessStatus::Stopped;
+                            managed.runtime.stopped_at = Some(now);
+                            managed.runtime.ready = false;
+                            managed.runtime.pid = None;
+                            managed.pid = None;
+                            managed.termination_intent = None;
+                        }
+                        managed.runtime.clone()
+                    } else {
+                        return Err(format!("Service {} not found after timeout", service_id));
                     }
-                }
+                };
                 
-                let runtime = processes.get(service_id).unwrap().runtime.clone();
+                // Emit timeout stopped status
+                emit_runtime_changed(_app, service_id, &runtime);
+                
                 Ok(runtime)
             }
         }
@@ -385,13 +438,19 @@ impl ProcessManager {
         };
 
         // Update status to stopping BEFORE killing and set intent
-        {
+        let runtime = {
             let mut processes = self.processes.lock().unwrap();
             if let Some(managed) = processes.get_mut(service_id) {
                 managed.runtime.status = ProcessStatus::Stopping;
                 managed.termination_intent = Some(TerminationIntent::ForceKill);
+                managed.runtime.clone()
+            } else {
+                return Err(format!("Service {} not found during force kill", service_id));
             }
-        }
+        };
+        
+        // Emit Stopping status
+        emit_runtime_changed(_app, service_id, &runtime);
 
         // Force kill process tree
         kill_process_tree(pid, true)?;
@@ -401,17 +460,29 @@ impl ProcessManager {
             Ok(_) => Ok(()),
             Err(_) => {
                 // Timeout - manually update to stopped
-                let mut processes = self.processes.lock().unwrap();
-                if let Some(managed) = processes.get_mut(service_id) {
-                    let now = std::time::SystemTime::now()
-                        .duration_since(std::time::UNIX_EPOCH)
-                        .unwrap()
-                        .as_millis() as u64;
-                    
-                    managed.runtime.status = ProcessStatus::Stopped;
-                    managed.runtime.stopped_at = Some(now);
-                    managed.runtime.ready = false;
-                }
+                let runtime = {
+                    let mut processes = self.processes.lock().unwrap();
+                    if let Some(managed) = processes.get_mut(service_id) {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u64;
+                        
+                        managed.runtime.status = ProcessStatus::Stopped;
+                        managed.runtime.stopped_at = Some(now);
+                        managed.runtime.ready = false;
+                        managed.runtime.pid = None;
+                        managed.pid = None;
+                        managed.termination_intent = None;
+                        managed.runtime.clone()
+                    } else {
+                        return Ok(());
+                    }
+                };
+                
+                // Emit timeout stopped status
+                emit_runtime_changed(_app, service_id, &runtime);
+                
                 Ok(())
             }
         }
