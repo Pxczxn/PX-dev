@@ -194,6 +194,46 @@ impl ProcessManager {
         }
     }
 
+    /// Wait for process termination (used by stop and forceKill)
+    async fn wait_for_termination(
+        &self,
+        service_id: &str,
+        timeout: Duration,
+    ) -> Result<ProcessRuntime, String> {
+        let start = Instant::now();
+        
+        loop {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+            
+            // Check if process terminated
+            let status = {
+                let processes = self.processes.lock().unwrap();
+                if let Some(managed) = processes.get(service_id) {
+                    managed.runtime.status.clone()
+                } else {
+                    return Err("Service disappeared during wait".to_string());
+                }
+            };
+            
+            if matches!(status, ProcessStatus::Stopped | ProcessStatus::Exited | ProcessStatus::Failed) {
+                // Process terminated
+                break;
+            }
+            
+            if start.elapsed() > timeout {
+                return Err("Timeout waiting for process termination".to_string());
+            }
+        }
+
+        // Return final runtime
+        let runtime = {
+            let processes = self.processes.lock().unwrap();
+            processes.get(service_id).unwrap().runtime.clone()
+        };
+
+        Ok(runtime)
+    }
+
     /// Stop a service process (graceful, waits for exit with timeout)
     pub async fn stop(&self, _app: &AppHandle, service_id: &str) -> Result<ProcessRuntime, String> {
         let pid = {
@@ -227,28 +267,9 @@ impl ProcessManager {
         }
 
         // Wait for process to actually terminate (with timeout)
-        let timeout = Duration::from_secs(5);
-        let start = Instant::now();
-        
-        loop {
-            tokio::time::sleep(Duration::from_millis(100)).await;
-            
-            // Check if process terminated
-            let status = {
-                let processes = self.processes.lock().unwrap();
-                if let Some(managed) = processes.get(service_id) {
-                    managed.runtime.status.clone()
-                } else {
-                    return Err("Service disappeared during stop".to_string());
-                }
-            };
-            
-            if matches!(status, ProcessStatus::Stopped | ProcessStatus::Exited | ProcessStatus::Failed) {
-                // Process terminated
-                break;
-            }
-            
-            if start.elapsed() > timeout {
+        match self.wait_for_termination(service_id, Duration::from_secs(5)).await {
+            Ok(runtime) => Ok(runtime),
+            Err(_) => {
                 // Timeout, force kill
                 kill_process_tree(pid, true)?;
                 
@@ -269,17 +290,11 @@ impl ProcessManager {
                         managed.runtime.ready = false;
                     }
                 }
-                break;
+                
+                let runtime = processes.get(service_id).unwrap().runtime.clone();
+                Ok(runtime)
             }
         }
-
-        // Return final runtime
-        let runtime = {
-            let processes = self.processes.lock().unwrap();
-            processes.get(service_id).unwrap().runtime.clone()
-        };
-
-        Ok(runtime)
     }
 
     /// Restart a service process
@@ -292,7 +307,7 @@ impl ProcessManager {
         self.start(app, service_id).await
     }
 
-    /// Force kill a service process
+    /// Force kill a service process (waits for termination)
     pub async fn force_kill(&self, _app: &AppHandle, service_id: &str) -> Result<(), String> {
         let pid = {
             let processes = self.processes.lock().unwrap();
@@ -313,8 +328,25 @@ impl ProcessManager {
         // Force kill process tree
         kill_process_tree(pid, true)?;
 
-        // Terminated event will handle final status update to Stopped
-        Ok(())
+        // Wait for Terminated event to update status
+        match self.wait_for_termination(service_id, Duration::from_secs(3)).await {
+            Ok(_) => Ok(()),
+            Err(_) => {
+                // Timeout - manually update to stopped
+                let mut processes = self.processes.lock().unwrap();
+                if let Some(managed) = processes.get_mut(service_id) {
+                    let now = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .unwrap()
+                        .as_millis() as u64;
+                    
+                    managed.runtime.status = ProcessStatus::Stopped;
+                    managed.runtime.stopped_at = Some(now);
+                    managed.runtime.ready = false;
+                }
+                Ok(())
+            }
+        }
     }
 
     /// Get runtime for one or all services
