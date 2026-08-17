@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ============ Settings Enums ============
 
@@ -28,6 +29,38 @@ impl Default for CloseBehavior {
     fn default() -> Self {
         CloseBehavior::Tray
     }
+}
+
+// ============ Workspace & Service Enums ============
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum StartMode {
+    Parallel,
+    Sequential,
+    Dependency,
+}
+
+impl Default for StartMode {
+    fn default() -> Self {
+        StartMode::Parallel
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceType {
+    Frontend,
+    Node,
+    Java,
+    Generic,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum ServiceRole {
+    Frontend,
+    Backend,
 }
 
 // ============ Settings ============
@@ -145,14 +178,234 @@ impl SettingsPatch {
     }
 }
 
+// ============ Workspace ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Workspace {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub root_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub icon: Option<String>,
+    pub favorite: bool,
+    pub start_mode: StartMode,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl Workspace {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.trim().is_empty() {
+            return Err("Workspace name cannot be empty".to_string());
+        }
+        Ok(())
+    }
+}
+
+// ============ WorkspaceInput (for create) ============
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceInput {
+    pub name: String,
+    pub description: Option<String>,
+    pub root_path: Option<String>,
+    pub color: Option<String>,
+    pub icon: Option<String>,
+    pub favorite: Option<bool>,
+    pub start_mode: Option<StartMode>,
+}
+
+// ============ WorkspacePatch (for update) ============
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspacePatch {
+    pub name: Option<String>,
+    pub description: Option<String>,
+    pub root_path: Option<String>,
+    pub color: Option<String>,
+    pub icon: Option<String>,
+    pub favorite: Option<bool>,
+    pub start_mode: Option<StartMode>,
+}
+
+impl WorkspacePatch {
+    pub fn apply_to(&self, workspace: &mut Workspace) {
+        if let Some(name) = &self.name {
+            workspace.name = name.clone();
+        }
+        if self.description.is_some() {
+            workspace.description = self.description.clone();
+        }
+        if self.root_path.is_some() {
+            workspace.root_path = self.root_path.clone();
+        }
+        if self.color.is_some() {
+            workspace.color = self.color.clone();
+        }
+        if self.icon.is_some() {
+            workspace.icon = self.icon.clone();
+        }
+        if let Some(favorite) = self.favorite {
+            workspace.favorite = favorite;
+        }
+        if let Some(start_mode) = &self.start_mode {
+            workspace.start_mode = start_mode.clone();
+        }
+        workspace.updated_at = chrono::Utc::now().to_rfc3339();
+    }
+}
+
+// ============ Service ============
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Service {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub service_type: ServiceType,
+    pub role: ServiceRole,
+    pub cwd: String,
+    pub executable: String,
+    pub args: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub env: Option<HashMap<String, String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub auto_open_browser: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub open_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub health_check: Option<serde_json::Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub shell_mode: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub discovery: Option<serde_json::Value>,
+    pub created_at: String,
+    pub updated_at: String,
+}
+
+impl Service {
+    pub fn validate(&self) -> Result<(), String> {
+        if self.name.trim().is_empty() {
+            return Err("Service name cannot be empty".to_string());
+        }
+        if self.cwd.trim().is_empty() {
+            return Err("Service cwd cannot be empty".to_string());
+        }
+        if self.executable.trim().is_empty() {
+            return Err("Service executable cannot be empty".to_string());
+        }
+        Ok(())
+    }
+}
+
+// ============ ServiceInput (for create) ============
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServiceInput {
+    pub workspace_id: String,
+    pub name: String,
+    #[serde(rename = "type")]
+    pub service_type: ServiceType,
+    pub role: ServiceRole,
+    pub cwd: String,
+    pub executable: String,
+    pub args: Vec<String>,
+    pub env: Option<HashMap<String, String>>,
+    pub port: Option<u16>,
+    pub auto_open_browser: Option<bool>,
+    pub open_url: Option<String>,
+    pub health_check: Option<serde_json::Value>,
+    pub shell_mode: Option<bool>,
+    pub discovery: Option<serde_json::Value>,
+}
+
+// ============ ServicePatch (for update) ============
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServicePatch {
+    pub name: Option<String>,
+    #[serde(rename = "type")]
+    pub service_type: Option<ServiceType>,
+    pub role: Option<ServiceRole>,
+    pub cwd: Option<String>,
+    pub executable: Option<String>,
+    pub args: Option<Vec<String>>,
+    pub env: Option<HashMap<String, String>>,
+    pub port: Option<u16>,
+    pub auto_open_browser: Option<bool>,
+    pub open_url: Option<String>,
+    pub health_check: Option<serde_json::Value>,
+    pub shell_mode: Option<bool>,
+    pub discovery: Option<serde_json::Value>,
+}
+
+impl ServicePatch {
+    pub fn apply_to(&self, service: &mut Service) {
+        if let Some(name) = &self.name {
+            service.name = name.clone();
+        }
+        if let Some(service_type) = &self.service_type {
+            service.service_type = service_type.clone();
+        }
+        if let Some(role) = &self.role {
+            service.role = role.clone();
+        }
+        if let Some(cwd) = &self.cwd {
+            service.cwd = cwd.clone();
+        }
+        if let Some(executable) = &self.executable {
+            service.executable = executable.clone();
+        }
+        if let Some(args) = &self.args {
+            service.args = args.clone();
+        }
+        if self.env.is_some() {
+            service.env = self.env.clone();
+        }
+        if self.port.is_some() {
+            service.port = self.port;
+        }
+        if self.auto_open_browser.is_some() {
+            service.auto_open_browser = self.auto_open_browser;
+        }
+        if self.open_url.is_some() {
+            service.open_url = self.open_url.clone();
+        }
+        if self.health_check.is_some() {
+            service.health_check = self.health_check.clone();
+        }
+        if self.shell_mode.is_some() {
+            service.shell_mode = self.shell_mode;
+        }
+        if self.discovery.is_some() {
+            service.discovery = self.discovery.clone();
+        }
+        service.updated_at = chrono::Utc::now().to_rfc3339();
+    }
+}
+
 // ============ AppConfig ============
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub version: u32,
     pub settings: Settings,
-    pub workspaces: Vec<serde_json::Value>,
-    pub services: Vec<serde_json::Value>,
+    pub workspaces: Vec<Workspace>,
+    pub services: Vec<Service>,
 }
 
 impl Default for AppConfig {

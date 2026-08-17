@@ -34,18 +34,20 @@ describe('Tauri Adapter', () => {
     expect(response).toBe('PX Dev Tauri backend ready')
   })
 
-  it('throws NotImplementedError for workspace methods', () => {
+  it('throws NotImplementedError for unimplemented workspace methods', () => {
     const adapter = createTauriAdapter()
 
-    expect(() => adapter.workspace.list()).toThrow(NotImplementedError)
-    expect(() => adapter.workspace.list()).toThrow('workspace.list is not implemented')
+    // Phase 3: list, create, update, delete are now implemented
+    // Only test unimplemented methods
+    expect(() => adapter.workspace.discover({ rootPath: '/test' })).toThrow(NotImplementedError)
+    expect(() => adapter.workspace.discover({ rootPath: '/test' })).toThrow('workspace.discover is not implemented')
   })
 
-  it('throws NotImplementedError for service methods', () => {
+  it('throws NotImplementedError for unimplemented service methods', () => {
     const adapter = createTauriAdapter()
 
-    expect(() => adapter.service.create({ name: 'test' })).toThrow(NotImplementedError)
-    expect(() => adapter.service.create({ name: 'test' })).toThrow('service.create is not implemented')
+    // Phase 3: list, create, update, delete are now implemented
+    // No unimplemented methods in Phase 3, skip this test
   })
 
   it('throws NotImplementedError for process methods', () => {

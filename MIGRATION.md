@@ -1,5 +1,169 @@
 # Electron → Tauri 2 迁移状态
 
+## Phase 3: Workspace & Service CRUD ✅ 完成
+
+**实施日期**：2026-08-16
+
+### 已实现
+
+- ✅ Workspace CRUD（list, create, update, delete）
+- ✅ Service CRUD（list, create, update, delete）
+- ✅ 完整的 Rust 类型系统（Workspace/Service + Input/Patch）
+- ✅ ConfigStore 扩展（统一配置管理）
+- ✅ 类型安全枚举（StartMode, ServiceType, ServiceRole）
+- ✅ 级联删除（删除 Workspace 同时删除其所有 Service）
+- ✅ 外键约束（创建 Service 时验证 Workspace 存在）
+- ✅ 自动时间戳（ISO 8601 UTC）
+- ✅ UUID 自动生成
+
+### 技术方案
+
+**Rust 类型定义**：
+```rust
+// 枚举类型
+pub enum StartMode { Parallel, Sequential, Dependency }
+pub enum ServiceType { Frontend, Node, Java, Generic }
+pub enum ServiceRole { Frontend, Backend }
+
+// Workspace
+pub struct Workspace {
+    pub id: String,              // UUID v4
+    pub name: String,
+    pub description: Option<String>,
+    pub root_path: Option<String>,
+    pub color: Option<String>,
+    pub icon: Option<String>,
+    pub favorite: bool,
+    pub start_mode: StartMode,
+    pub created_at: String,      // ISO 8601 UTC
+    pub updated_at: String,
+}
+
+// Service
+pub struct Service {
+    pub id: String,
+    pub workspace_id: String,
+    pub name: String,
+    pub service_type: ServiceType,
+    pub role: ServiceRole,
+    pub cwd: String,
+    pub executable: String,
+    pub args: Vec<String>,
+    pub env: Option<HashMap<String, String>>,
+    pub port: Option<u16>,
+    // ... 其他字段
+    pub created_at: String,
+    pub updated_at: String,
+}
+```
+
+**ConfigStore 扩展**：
+```rust
+impl ConfigStore {
+    // Workspace CRUD
+    pub fn list_workspaces(&self) -> Result<Vec<Workspace>, String>
+    pub fn get_workspace(&self, id: &str) -> Result<Workspace, String>
+    pub fn create_workspace(&self, input: WorkspaceInput) -> Result<Workspace, String>
+    pub fn update_workspace(&self, id: &str, patch: WorkspacePatch) -> Result<Workspace, String>
+    pub fn delete_workspace(&self, id: &str) -> Result<(), String>
+    
+    // Service CRUD
+    pub fn list_services(&self) -> Result<Vec<Service>, String>
+    pub fn get_service(&self, id: &str) -> Result<Service, String>
+    pub fn create_service(&self, input: ServiceInput) -> Result<Service, String>
+    pub fn update_service(&self, id: &str, patch: ServicePatch) -> Result<Service, String>
+    pub fn delete_service(&self, id: &str) -> Result<(), String>
+}
+```
+
+**Commands**：
+- `list_workspaces` → 列出所有工作区
+- `create_workspace(input)` → 创建工作区
+- `update_workspace(input)` → 更新工作区（input 包含 id）
+- `delete_workspace(id)` → 删除工作区及其所有服务
+- `list_services` → 列出所有服务
+- `create_service(input)` → 创建服务（验证 workspace_id 存在）
+- `update_service(input)` → 更新服务（input 包含 id）
+- `delete_service(id)` → 删除服务
+
+### Tauri Adapter 更新
+
+```typescript
+workspace: {
+  list: async () => await invoke('list_workspaces'),
+  create: async (input) => await invoke('create_workspace', { input }),
+  update: async (input) => await invoke('update_workspace', { input }),
+  delete: async (id) => await invoke('delete_workspace', { id }),
+  discover: notImplemented('workspace.discover'),              // Phase 6
+  applyDiscovery: notImplemented('workspace.applyDiscovery'),  // Phase 6
+  getRuntimeEndpoints: notImplemented('workspace.getRuntimeEndpoints'), // Phase 4
+}
+
+service: {
+  list: async () => await invoke('list_services'),
+  create: async (input) => await invoke('create_service', { input }),
+  update: async (input) => await invoke('update_service', { input }),
+  delete: async (id) => await invoke('delete_service', { id }),
+}
+```
+
+### 关键特性
+
+#### 1. **级联删除**
+删除 Workspace 时自动删除所有关联的 Service：
+```rust
+pub fn delete_workspace(&self, id: &str) -> Result<(), String> {
+    // Remove workspace
+    workspaces.remove(index);
+    
+    // Cascade delete: remove all services belonging to this workspace
+    services.retain(|s| s.workspace_id != id);
+    
+    // Save both
+    self.store.set("workspaces", json!(workspaces));
+    self.store.set("services", json!(services));
+    self.store.save()?;
+}
+```
+
+#### 2. **外键约束**
+创建 Service 时验证 Workspace 存在：
+```rust
+pub fn create_service(&self, input: ServiceInput) -> Result<Service, String> {
+    // Verify workspace exists (foreign key constraint)
+    self.get_workspace(&input.workspace_id)?;
+    
+    // Create service
+    ...
+}
+```
+
+#### 3. **自动时间戳**
+使用 `chrono` 生成 ISO 8601 UTC 时间戳：
+```rust
+let now = chrono::Utc::now().to_rfc3339();
+workspace.created_at = now.clone();
+workspace.updated_at = now;
+```
+
+#### 4. **UUID 自动生成**
+使用 `uuid` crate 生成 v4 UUID：
+```rust
+id: uuid::Uuid::new_v4().to_string()
+```
+
+### 测试覆盖
+
+**Rust 测试（7 tests）**：
+- Settings 相关测试（Phase 2 继承）
+- ConfigStore version 常量
+
+**TypeScript 测试（24 tests）**：
+- Phase 1+2 测试继续通过
+- 更新未实现方法测试（workspace.discover, service 全部实现）
+
+---
+
 ## Phase 2: Config & Settings ✅ 完成（增强版）
 
 **实施日期**：2026-08-16  
@@ -210,17 +374,24 @@ App.vue → api.system.ping() → Platform Adapter → invoke('px_ping') → Rus
                                                 → 严格断言匹配
 ```
 
-### Electron-Only API（Phase 1-2 未迁移）
+### Electron-Only API（Phase 1-3 未迁移）
 
 以下 API 当前仅在 Electron 中可用，Tauri 调用会抛出 `NotImplementedError`：
 
-#### workspace 命名空间（Phase 3 计划迁移）
-- `list()`, `create()`, `update()`, `delete()`
-- `discover()`, `applyDiscovery()`
-- `getRuntimeEndpoints()`
+#### workspace 命名空间
+- ✅ `list()` — **Phase 3 已实现**
+- ✅ `create(input)` — **Phase 3 已实现**
+- ✅ `update(input)` — **Phase 3 已实现**
+- ✅ `delete(id)` — **Phase 3 已实现**
+- ❌ `discover(input)` — Phase 6 计划迁移
+- ❌ `applyDiscovery(workspaceId, inputs)` — Phase 6 计划迁移
+- ❌ `getRuntimeEndpoints(workspaceId)` — Phase 4 计划迁移
 
-#### service 命名空间（Phase 3 计划迁移）
-- `list()`, `create()`, `update()`, `delete()`
+#### service 命名空间
+- ✅ `list()` — **Phase 3 已实现**
+- ✅ `create(input)` — **Phase 3 已实现**
+- ✅ `update(input)` — **Phase 3 已实现**
+- ✅ `delete(id)` — **Phase 3 已实现**
 
 #### process 命名空间（Phase 4 计划迁移）
 - `start()`, `stop()`, `restart()`, `forceKill()`
@@ -251,11 +422,10 @@ App.vue → api.system.ping() → Platform Adapter → invoke('px_ping') → Rus
 
 ---
 
-## Phase 2-6：待定
+## Phase 3-6：计划
 
 业务逻辑迁移将在后续阶段进行：
-- **Phase 2: Config & Settings** ✅ **已完成**
-- Phase 3: Workspace & Service CRUD
+- **Phase 3: Workspace & Service CRUD** ✅ **已完成**
 - Phase 4: Process Management
 - Phase 5: Logging & Events
 - Phase 6: Discovery & Environment Detection
@@ -263,6 +433,22 @@ App.vue → api.system.ping() → Platform Adapter → invoke('px_ping') → Rus
 ---
 
 ## 文件变更清单
+
+### Phase 3 新增文件（2 个）
+
+**Rust Commands**：
+- `src-tauri/src/commands/workspace.rs` — Workspace CRUD commands
+- `src-tauri/src/commands/service.rs` — Service CRUD commands
+
+### Phase 3 修改文件（6 个）
+
+- `src-tauri/Cargo.toml` — 新增 chrono, uuid 依赖
+- `src-tauri/src/types.rs` — 新增 Workspace/Service 类型 + Input/Patch + 枚举
+- `src-tauri/src/config/store.rs` — 扩展 ConfigStore（Workspace/Service CRUD）
+- `src-tauri/src/commands/mod.rs` — 导出 workspace, service 模块
+- `src-tauri/src/lib.rs` — 注册 8 个新 commands
+- `src/renderer/src/api/platform/tauri.ts` — 实现 workspace + service 命名空间
+- `tests/unit/api/platform/tauri.test.ts` — 更新测试（workspace/service 已实现）
 
 ### Phase 2 新增文件（6 个）
 

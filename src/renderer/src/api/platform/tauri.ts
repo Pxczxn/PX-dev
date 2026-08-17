@@ -18,6 +18,7 @@ function createNotImplementedNamespace<T>(name: string): T {
  * Tauri 适配器：实现完整 PxDevClient 接口
  * Phase 1: system.ping
  * Phase 2: app.getSettings, app.updateSettings, app.getVersion
+ * Phase 3: workspace.*, service.*
  */
 export function createTauriAdapter(): PxDevClient {
   return {
@@ -39,8 +40,21 @@ export function createTauriAdapter(): PxDevClient {
       getDataPath: notImplemented('app.getDataPath'),
       selectDataPath: notImplemented('app.selectDataPath'),
     },
-    workspace: createNotImplementedNamespace('workspace'),
-    service: createNotImplementedNamespace('service'),
+    workspace: {
+      list: async () => await invoke('list_workspaces'),
+      create: async (input: Record<string, unknown>) => await invoke('create_workspace', { input }),
+      update: async (input: Record<string, unknown>) => await invoke('update_workspace', { input }),
+      delete: async (id: string) => await invoke('delete_workspace', { id }),
+      discover: notImplemented('workspace.discover'),
+      applyDiscovery: notImplemented('workspace.applyDiscovery'),
+      getRuntimeEndpoints: notImplemented('workspace.getRuntimeEndpoints'),
+    },
+    service: {
+      list: async () => await invoke('list_services'),
+      create: async (input: Record<string, unknown>) => await invoke('create_service', { input }),
+      update: async (input: Record<string, unknown>) => await invoke('update_service', { input }),
+      delete: async (id: string) => await invoke('delete_service', { id }),
+    },
     process: createNotImplementedNamespace('process'),
     log: createNotImplementedNamespace('log'),
     environment: createNotImplementedNamespace('environment'),
