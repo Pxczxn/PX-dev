@@ -3,9 +3,16 @@ use crate::config::ConfigStore;
 use crate::types::{Service, ServiceInput, ServicePatch};
 
 #[tauri::command]
-pub async fn list_services(app: AppHandle) -> Result<Vec<Service>, String> {
+pub async fn list_services(
+    app: AppHandle,
+    workspace_id: Option<String>,
+) -> Result<Vec<Service>, String> {
     let store = ConfigStore::open(&app)?;
-    store.list_services()
+    
+    match workspace_id {
+        Some(id) => store.list_services_by_workspace(&id),
+        None => store.list_services(),
+    }
 }
 
 #[tauri::command]

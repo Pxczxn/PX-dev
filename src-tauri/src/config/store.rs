@@ -76,6 +76,7 @@ impl ConfigStore {
                     .map_err(|e| format!("Failed to parse settings: {}", e))?;
                 
                 settings.apply_defaults();
+                settings.validate()?;
                 Ok(settings)
             }
             None => {
@@ -226,10 +227,15 @@ impl ConfigStore {
             service_type: input.service_type,
             role: input.role,
             cwd: input.cwd,
-            executable: input.executable,
+            command: input.command,
             args: input.args,
-            env: input.env,
+            package_manager: input.package_manager,
             port: input.port,
+            env: input.env,
+            env_file: input.env_file,
+            enabled: input.enabled,
+            dependencies: input.dependencies,
+            startup_delay: input.startup_delay,
             auto_open_browser: input.auto_open_browser,
             open_url: input.open_url,
             health_check: input.health_check,

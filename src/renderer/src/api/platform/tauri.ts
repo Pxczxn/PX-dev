@@ -50,7 +50,7 @@ export function createTauriAdapter(): PxDevClient {
       getRuntimeEndpoints: notImplemented('workspace.getRuntimeEndpoints'),
     },
     service: {
-      list: async () => await invoke('list_services'),
+      list: async (workspaceId?: string) => await invoke('list_services', { workspaceId }),
       create: async (input: Record<string, unknown>) => await invoke('create_service', { input }),
       update: async (input: Record<string, unknown>) => await invoke('update_service', { input }),
       delete: async (id: string) => await invoke('delete_service', { id }),

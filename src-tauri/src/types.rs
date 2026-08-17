@@ -63,6 +63,16 @@ pub enum ServiceRole {
     Backend,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum PackageManager {
+    Npm,
+    Pnpm,
+    Yarn,
+    Bun,
+    Custom,
+}
+
 // ============ Settings ============
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -275,12 +285,21 @@ pub struct Service {
     pub service_type: ServiceType,
     pub role: ServiceRole,
     pub cwd: String,
-    pub executable: String,
-    pub args: Vec<String>,
+    pub command: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub args: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package_manager: Option<PackageManager>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub port: Option<u16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub env: Option<HashMap<String, String>>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub port: Option<u16>,
+    pub env_file: Option<String>,
+    pub enabled: bool,
+    pub dependencies: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub startup_delay: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub auto_open_browser: Option<bool>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -303,8 +322,18 @@ impl Service {
         if self.cwd.trim().is_empty() {
             return Err("Service cwd cannot be empty".to_string());
         }
-        if self.executable.trim().is_empty() {
-            return Err("Service executable cannot be empty".to_string());
+        if self.command.trim().is_empty() {
+            return Err("Service command cannot be empty".to_string());
+        }
+        if let Some(port) = self.port {
+            if port == 0 {
+                return Err("Service port must be between 1 and 65535".to_string());
+            }
+        }
+        if let Some(delay) = self.startup_delay {
+            if delay > 60000 {
+                return Err("Service startupDelay must be between 0 and 60000".to_string());
+            }
         }
         Ok(())
     }
@@ -321,10 +350,15 @@ pub struct ServiceInput {
     pub service_type: ServiceType,
     pub role: ServiceRole,
     pub cwd: String,
-    pub executable: String,
-    pub args: Vec<String>,
-    pub env: Option<HashMap<String, String>>,
+    pub command: String,
+    pub args: Option<Vec<String>>,
+    pub package_manager: Option<PackageManager>,
     pub port: Option<u16>,
+    pub env: Option<HashMap<String, String>>,
+    pub env_file: Option<String>,
+    pub enabled: bool,
+    pub dependencies: Vec<String>,
+    pub startup_delay: Option<u32>,
     pub auto_open_browser: Option<bool>,
     pub open_url: Option<String>,
     pub health_check: Option<serde_json::Value>,
@@ -342,10 +376,15 @@ pub struct ServicePatch {
     pub service_type: Option<ServiceType>,
     pub role: Option<ServiceRole>,
     pub cwd: Option<String>,
-    pub executable: Option<String>,
+    pub command: Option<String>,
     pub args: Option<Vec<String>>,
-    pub env: Option<HashMap<String, String>>,
+    pub package_manager: Option<PackageManager>,
     pub port: Option<u16>,
+    pub env: Option<HashMap<String, String>>,
+    pub env_file: Option<String>,
+    pub enabled: Option<bool>,
+    pub dependencies: Option<Vec<String>>,
+    pub startup_delay: Option<u32>,
     pub auto_open_browser: Option<bool>,
     pub open_url: Option<String>,
     pub health_check: Option<serde_json::Value>,
@@ -367,17 +406,32 @@ impl ServicePatch {
         if let Some(cwd) = &self.cwd {
             service.cwd = cwd.clone();
         }
-        if let Some(executable) = &self.executable {
-            service.executable = executable.clone();
+        if let Some(command) = &self.command {
+            service.command = command.clone();
         }
-        if let Some(args) = &self.args {
-            service.args = args.clone();
+        if self.args.is_some() {
+            service.args = self.args.clone();
+        }
+        if self.package_manager.is_some() {
+            service.package_manager = self.package_manager.clone();
+        }
+        if self.port.is_some() {
+            service.port = self.port;
         }
         if self.env.is_some() {
             service.env = self.env.clone();
         }
-        if self.port.is_some() {
-            service.port = self.port;
+        if self.env_file.is_some() {
+            service.env_file = self.env_file.clone();
+        }
+        if let Some(enabled) = self.enabled {
+            service.enabled = enabled;
+        }
+        if let Some(dependencies) = &self.dependencies {
+            service.dependencies = dependencies.clone();
+        }
+        if self.startup_delay.is_some() {
+            service.startup_delay = self.startup_delay;
         }
         if self.auto_open_browser.is_some() {
             service.auto_open_browser = self.auto_open_browser;
@@ -514,5 +568,144 @@ mod tests {
         let json = r#""tray""#;
         let behavior: CloseBehavior = serde_json::from_str(json).unwrap();
         assert_eq!(behavior, CloseBehavior::Tray);
+    }
+
+    #[test]
+    fn test_service_contract_round_trip() {
+        // Real frontend payload (TypeScript → Rust)
+        let json_input = r#"{
+            "workspaceId": "ws-123",
+            "name": "Frontend Dev Server",
+            "type": "frontend",
+            "role": "frontend",
+            "cwd": "/path/to/project",
+            "command": "npm",
+            "args": ["run", "dev"],
+            "packageManager": "npm",
+            "enabled": true,
+            "dependencies": [],
+            "startupDelay": 0,
+            "port": 5173,
+            "env": {"NODE_ENV": "development"},
+            "envFile": ".env.local",
+            "autoOpenBrowser": true,
+            "openUrl": "http://localhost:5173",
+            "shellMode": false
+        }"#;
+
+        // Deserialize ServiceInput
+        let input: ServiceInput = serde_json::from_str(json_input).unwrap();
+        assert_eq!(input.command, "npm");
+        assert_eq!(input.enabled, true);
+        assert_eq!(input.dependencies.len(), 0);
+        
+        // Create Service
+        let service = Service {
+            id: "svc-456".to_string(),
+            workspace_id: input.workspace_id,
+            name: input.name,
+            service_type: input.service_type,
+            role: input.role,
+            cwd: input.cwd,
+            command: input.command,
+            args: input.args,
+            package_manager: input.package_manager,
+            port: input.port,
+            env: input.env,
+            env_file: input.env_file,
+            enabled: input.enabled,
+            dependencies: input.dependencies,
+            startup_delay: input.startup_delay,
+            auto_open_browser: input.auto_open_browser,
+            open_url: input.open_url,
+            health_check: None,
+            shell_mode: input.shell_mode,
+            discovery: None,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        // Serialize back to JSON (Rust → TypeScript)
+        let json_output = serde_json::to_value(&service).unwrap();
+        
+        // Verify field names match TypeScript contract
+        assert_eq!(json_output["command"], "npm");
+        assert_eq!(json_output["enabled"], true);
+        assert_eq!(json_output["dependencies"], serde_json::json!([]));
+        assert_eq!(json_output["startupDelay"], 0);
+        assert_eq!(json_output["packageManager"], "npm");
+        assert_eq!(json_output["envFile"], ".env.local");
+        
+        // Must NOT contain renamed Rust fields
+        assert!(json_output.get("executable").is_none());
+        assert!(json_output.get("startup_delay").is_none());
+        assert!(json_output.get("package_manager").is_none());
+        assert!(json_output.get("env_file").is_none());
+        
+        // Verify camelCase naming
+        assert!(json_output.get("workspaceId").is_some());
+        assert!(json_output.get("autoOpenBrowser").is_some());
+        assert!(json_output.get("openUrl").is_some());
+        assert!(json_output.get("shellMode").is_some());
+        assert!(json_output.get("createdAt").is_some());
+        assert!(json_output.get("updatedAt").is_some());
+    }
+
+    #[test]
+    fn test_service_validate() {
+        let mut service = Service {
+            id: "svc-1".to_string(),
+            workspace_id: "ws-1".to_string(),
+            name: "Test Service".to_string(),
+            service_type: ServiceType::Node,
+            role: ServiceRole::Backend,
+            cwd: "/path".to_string(),
+            command: "node".to_string(),
+            args: None,
+            package_manager: None,
+            port: Some(3000),
+            env: None,
+            env_file: None,
+            enabled: true,
+            dependencies: vec![],
+            startup_delay: Some(1000),
+            auto_open_browser: None,
+            open_url: None,
+            health_check: None,
+            shell_mode: None,
+            discovery: None,
+            created_at: "2024-01-01T00:00:00Z".to_string(),
+            updated_at: "2024-01-01T00:00:00Z".to_string(),
+        };
+
+        // Valid service
+        assert!(service.validate().is_ok());
+
+        // Empty name
+        service.name = "".to_string();
+        assert!(service.validate().is_err());
+        service.name = "Test Service".to_string();
+
+        // Empty cwd
+        service.cwd = "".to_string();
+        assert!(service.validate().is_err());
+        service.cwd = "/path".to_string();
+
+        // Empty command
+        service.command = "".to_string();
+        assert!(service.validate().is_err());
+        service.command = "node".to_string();
+
+        // Invalid port
+        service.port = Some(0);
+        assert!(service.validate().is_err());
+        service.port = Some(3000);
+
+        // Invalid startup delay
+        service.startup_delay = Some(70000);
+        assert!(service.validate().is_err());
+        service.startup_delay = Some(1000);
+
+        assert!(service.validate().is_ok());
     }
 }
