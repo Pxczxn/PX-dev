@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use tauri::AppHandle;
-use tauri_plugin_shell::ShellExt;
-use sysinfo::{System, Pid, Signal, ProcessesToUpdate};
+use tauri_plugin_shell::{ShellExt, process::CommandEvent};
 use crate::types::{ProcessRuntime, ProcessStatus};
 use crate::config::ConfigStore;
+use super::{build_command, kill_process_tree};
 
 pub struct ManagedProcess {
     pub runtime: ProcessRuntime,
@@ -46,17 +46,16 @@ impl ProcessManager {
             return Err(format!("Service {} has no working directory configured", service.name));
         }
 
+        // Build platform-specific command
+        let built_cmd = build_command(&service);
+
         // Build command with chaining
         let cmd = app.shell()
-            .command(&service.command)
+            .command(&built_cmd.program)
             .current_dir(&service.cwd);
 
         // Add args
-        let cmd = if let Some(args) = &service.args {
-            args.iter().fold(cmd, |c, arg| c.arg(arg))
-        } else {
-            cmd
-        };
+        let cmd = built_cmd.args.iter().fold(cmd, |c, arg| c.arg(arg));
 
         // Add env vars
         let cmd = if let Some(env) = &service.env {
@@ -88,13 +87,14 @@ impl ProcessManager {
 
         // Spawn process
         match cmd.spawn() {
-            Ok((_rx, child)) => {
+            Ok((mut rx, child)) => {
                 let pid = child.pid();
                 
                 // Update runtime with pid and status
                 runtime.pid = Some(pid);
                 runtime.status = ProcessStatus::Running;
-                runtime.ready = true;
+                // Don't set ready=true yet - wait for health check (Phase 5)
+                runtime.ready = false;
 
                 {
                     let mut processes = self.processes.lock().unwrap();
@@ -103,6 +103,51 @@ impl ProcessManager {
                         managed.pid = Some(pid);
                     }
                 }
+
+                // Spawn task to listen for process events
+                let service_id_clone = service_id.to_string();
+                let processes_clone = self.processes.clone();
+                
+                tauri::async_runtime::spawn(async move {
+                    while let Some(event) = rx.recv().await {
+                        match event {
+                            CommandEvent::Terminated(payload) => {
+                                let mut processes = processes_clone.lock().unwrap();
+                                if let Some(managed) = processes.get_mut(&service_id_clone) {
+                                    let now = std::time::SystemTime::now()
+                                        .duration_since(std::time::UNIX_EPOCH)
+                                        .unwrap()
+                                        .as_millis() as u64;
+                                    
+                                    managed.runtime.stopped_at = Some(now);
+                                    managed.runtime.exit_code = payload.code;
+                                    managed.runtime.ready = false;
+                                    
+                                    // Determine final status
+                                    if managed.runtime.status == ProcessStatus::Stopping {
+                                        managed.runtime.status = ProcessStatus::Stopped;
+                                    } else if payload.code == Some(0) {
+                                        managed.runtime.status = ProcessStatus::Exited;
+                                    } else {
+                                        managed.runtime.status = ProcessStatus::Failed;
+                                    }
+                                }
+                            }
+                            CommandEvent::Error(error) => {
+                                let mut processes = processes_clone.lock().unwrap();
+                                if let Some(managed) = processes.get_mut(&service_id_clone) {
+                                    managed.runtime.status = ProcessStatus::Failed;
+                                    managed.runtime.error = Some(error);
+                                    managed.runtime.ready = false;
+                                }
+                            }
+                            CommandEvent::Stdout(_) | CommandEvent::Stderr(_) => {
+                                // Phase 5: Forward to LogManager
+                            }
+                            _ => {}
+                        }
+                    }
+                });
 
                 Ok(runtime)
             }
@@ -122,7 +167,7 @@ impl ProcessManager {
         }
     }
 
-    /// Stop a service process
+    /// Stop a service process (graceful, waits for exit)
     pub async fn stop(&self, _app: &AppHandle, service_id: &str) -> Result<ProcessRuntime, String> {
         let pid = {
             let processes = self.processes.lock().unwrap();
@@ -148,39 +193,15 @@ impl ProcessManager {
             }
         }
 
-        // Kill process using sysinfo
-        let mut sys = System::new();
-        sys.refresh_processes(ProcessesToUpdate::All, true);
-        
-        let pid_obj = Pid::from_u32(pid);
-        if let Some(process) = sys.process(pid_obj) {
-            if process.kill_with(Signal::Term).is_none() {
-                return Err(format!("Failed to send SIGTERM to process {}", pid));
-            }
-        } else {
-            return Err(format!("Process {} not found", pid));
-        }
+        // Kill process tree (graceful on Windows still uses /F due to .cmd wrappers)
+        kill_process_tree(pid, false)?;
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-
-        let mut runtime = {
+        // Wait for Terminated event to update status
+        // For now, return current runtime (Terminated event will update asynchronously)
+        let runtime = {
             let processes = self.processes.lock().unwrap();
             processes.get(service_id).unwrap().runtime.clone()
         };
-
-        runtime.status = ProcessStatus::Stopped;
-        runtime.stopped_at = Some(now);
-        runtime.ready = false;
-
-        {
-            let mut processes = self.processes.lock().unwrap();
-            if let Some(managed) = processes.get_mut(service_id) {
-                managed.runtime = runtime.clone();
-            }
-        }
 
         Ok(runtime)
     }
@@ -188,6 +209,10 @@ impl ProcessManager {
     /// Restart a service process
     pub async fn restart(&self, app: &AppHandle, service_id: &str) -> Result<ProcessRuntime, String> {
         self.stop(app, service_id).await?;
+        
+        // Wait a bit for process to fully terminate and ports to release
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        
         self.start(app, service_id).await
     }
 
@@ -201,33 +226,10 @@ impl ProcessManager {
             managed.pid.ok_or_else(|| format!("Service {} has no PID", service_id))?
         };
 
-        // Force kill using sysinfo
-        let mut sys = System::new();
-        sys.refresh_processes(ProcessesToUpdate::All, true);
-        
-        let pid_obj = Pid::from_u32(pid);
-        if let Some(process) = sys.process(pid_obj) {
-            if process.kill_with(Signal::Kill).is_none() {
-                return Err(format!("Failed to send SIGKILL to process {}", pid));
-            }
-        } else {
-            return Err(format!("Process {} not found", pid));
-        }
+        // Force kill process tree
+        kill_process_tree(pid, true)?;
 
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64;
-
-        {
-            let mut processes = self.processes.lock().unwrap();
-            if let Some(managed) = processes.get_mut(service_id) {
-                managed.runtime.status = ProcessStatus::Stopped;
-                managed.runtime.stopped_at = Some(now);
-                managed.runtime.ready = false;
-            }
-        }
-
+        // Terminated event will handle status update
         Ok(())
     }
 
