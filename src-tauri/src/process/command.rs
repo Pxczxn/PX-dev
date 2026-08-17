@@ -35,11 +35,44 @@ pub fn build_command(service: &Service) -> BuiltCommand {
 /// Check if command should use shell on Windows
 #[cfg(target_os = "windows")]
 fn should_use_shell_on_windows(command: &str) -> bool {
+    let cmd_lower = command.to_lowercase();
+    
+    // Check if already has batch extension
+    if cmd_lower.ends_with(".cmd") || cmd_lower.ends_with(".bat") {
+        return true;
+    }
+    
     // Known batch wrappers that require cmd.exe
     matches!(
-        command.to_lowercase().as_str(),
-        "npm" | "pnpm" | "yarn" | "npx" | "bun" | "mvnw" | "gradlew"
+        cmd_lower.as_str(),
+        "npm" | "pnpm" | "yarn" | "npx" | "bun" | 
+        "tsx" | "mvn" | "mvnw" | "gradle" | "gradlew"
     )
+}
+
+/// Resolve command to actual executable with extension
+#[cfg(target_os = "windows")]
+fn resolve_windows_executable(command: &str) -> String {
+    let cmd_lower = command.to_lowercase();
+    
+    // Already has extension, use as-is
+    if cmd_lower.ends_with(".cmd") || cmd_lower.ends_with(".bat") || cmd_lower.ends_with(".exe") {
+        return command.to_string();
+    }
+    
+    // Map known tools to their actual executables
+    match cmd_lower.as_str() {
+        "npm" | "pnpm" | "yarn" | "npx" | "tsx" | "mvn" | "mvnw" => {
+            format!("{}.cmd", command)
+        }
+        "gradle" | "gradlew" => {
+            format!("{}.bat", command)
+        }
+        "bun" => {
+            format!("{}.exe", command)
+        }
+        _ => command.to_string()
+    }
 }
 
 /// Build shell-wrapped command
@@ -55,36 +88,63 @@ fn build_shell_command(command: &str, args: &Option<Vec<String>>) -> BuiltComman
     }
 }
 
+/// Quote argument for Windows cmd.exe
+#[cfg(target_os = "windows")]
+fn quote_for_cmd(arg: &str) -> String {
+    // Empty string needs quotes
+    if arg.is_empty() {
+        return "\"\"".to_string();
+    }
+    
+    // Check if needs quoting
+    let needs_quote = arg.contains(' ') || arg.contains('\t') || 
+                      arg.contains('&') || arg.contains('|') || 
+                      arg.contains('<') || arg.contains('>') || 
+                      arg.contains('^') || arg.contains('\"') ||
+                      arg.contains('(') || arg.contains(')') ||
+                      arg.contains('%') || arg.contains('!') ||
+                      arg.contains(',') || arg.contains(';') ||
+                      arg.contains('=');
+    
+    if !needs_quote {
+        return arg.to_string();
+    }
+    
+    // Quote and escape
+    let mut result = String::from("\"");
+    for ch in arg.chars() {
+        match ch {
+            '\"' => result.push_str("\\\""),
+            '\\' => {
+                // Check if backslash is before quote
+                result.push('\\');
+            }
+            _ => result.push(ch),
+        }
+    }
+    result.push('\"');
+    result
+}
+
 /// Build Windows cmd.exe wrapped command
 #[cfg(target_os = "windows")]
 fn build_windows_shell_command(command: &str, args: &Option<Vec<String>>) -> BuiltCommand {
-    // Append .cmd extension for known wrappers
-    let command_with_ext = if matches!(
-        command.to_lowercase().as_str(),
-        "npm" | "pnpm" | "yarn" | "npx"
-    ) {
-        format!("{}.cmd", command)
-    } else if matches!(command.to_lowercase().as_str(), "mvnw") {
-        "mvnw.cmd".to_string()
-    } else if matches!(command.to_lowercase().as_str(), "gradlew") {
-        "gradlew.bat".to_string()
+    // Resolve command to actual executable
+    let resolved_cmd = resolve_windows_executable(command);
+    
+    // Quote the command itself if it has spaces
+    let quoted_cmd = if resolved_cmd.contains(' ') {
+        format!("\"{}\"", resolved_cmd)
     } else {
-        command.to_string()
+        resolved_cmd
     };
     
-    // Build full command line
-    let mut full_cmd = command_with_ext;
+    // Build full command line with quoted args
+    let mut full_cmd = quoted_cmd;
     if let Some(args) = args {
         for arg in args {
             full_cmd.push(' ');
-            // Quote args that contain spaces
-            if arg.contains(' ') {
-                full_cmd.push('"');
-                full_cmd.push_str(arg);
-                full_cmd.push('"');
-            } else {
-                full_cmd.push_str(arg);
-            }
+            full_cmd.push_str(&quote_for_cmd(arg));
         }
     }
     

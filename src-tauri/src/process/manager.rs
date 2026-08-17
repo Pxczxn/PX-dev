@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use tauri_plugin_shell::{ShellExt, process::CommandEvent};
 use crate::types::{ProcessRuntime, ProcessStatus};
@@ -9,17 +10,27 @@ use super::{build_command, kill_process_tree};
 pub struct ManagedProcess {
     pub runtime: ProcessRuntime,
     pub pid: Option<u32>,
+    pub generation: u64,  // Unique ID for this process instance
 }
 
 pub struct ProcessManager {
     processes: Arc<Mutex<HashMap<String, ManagedProcess>>>,
+    next_generation: Arc<Mutex<u64>>,
 }
 
 impl ProcessManager {
     pub fn new() -> Self {
         Self {
             processes: Arc::new(Mutex::new(HashMap::new())),
+            next_generation: Arc::new(Mutex::new(1)),
         }
+    }
+
+    fn allocate_generation(&self) -> u64 {
+        let mut gen = self.next_generation.lock().unwrap();
+        let current = *gen;
+        *gen += 1;
+        current
     }
 
     /// Start a service process
@@ -64,6 +75,9 @@ impl ProcessManager {
             cmd
         };
 
+        // Allocate generation for this process instance
+        let generation = self.allocate_generation();
+
         // Update status to starting
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -81,6 +95,7 @@ impl ProcessManager {
                 ManagedProcess {
                     runtime: runtime.clone(),
                     pid: None,
+                    generation,
                 },
             );
         }
@@ -107,6 +122,7 @@ impl ProcessManager {
                 // Spawn task to listen for process events
                 let service_id_clone = service_id.to_string();
                 let processes_clone = self.processes.clone();
+                let expected_generation = generation;
                 
                 tauri::async_runtime::spawn(async move {
                     while let Some(event) = rx.recv().await {
@@ -114,6 +130,12 @@ impl ProcessManager {
                             CommandEvent::Terminated(payload) => {
                                 let mut processes = processes_clone.lock().unwrap();
                                 if let Some(managed) = processes.get_mut(&service_id_clone) {
+                                    // Check generation to avoid stale events
+                                    if managed.generation != expected_generation {
+                                        // This is a stale event from an old process instance, ignore
+                                        continue;
+                                    }
+                                    
                                     let now = std::time::SystemTime::now()
                                         .duration_since(std::time::UNIX_EPOCH)
                                         .unwrap()
@@ -136,6 +158,11 @@ impl ProcessManager {
                             CommandEvent::Error(error) => {
                                 let mut processes = processes_clone.lock().unwrap();
                                 if let Some(managed) = processes.get_mut(&service_id_clone) {
+                                    // Check generation
+                                    if managed.generation != expected_generation {
+                                        continue;
+                                    }
+                                    
                                     managed.runtime.status = ProcessStatus::Failed;
                                     managed.runtime.error = Some(error);
                                     managed.runtime.ready = false;
@@ -167,7 +194,7 @@ impl ProcessManager {
         }
     }
 
-    /// Stop a service process (graceful, waits for exit)
+    /// Stop a service process (graceful, waits for exit with timeout)
     pub async fn stop(&self, _app: &AppHandle, service_id: &str) -> Result<ProcessRuntime, String> {
         let pid = {
             let processes = self.processes.lock().unwrap();
@@ -193,11 +220,60 @@ impl ProcessManager {
             }
         }
 
-        // Kill process tree (graceful on Windows still uses /F due to .cmd wrappers)
-        kill_process_tree(pid, false)?;
+        // Try graceful termination first (no /F on Windows)
+        if let Err(_e) = kill_process_tree(pid, false) {
+            // If graceful kill fails, try force kill
+            kill_process_tree(pid, true)?;
+        }
 
-        // Wait for Terminated event to update status
-        // For now, return current runtime (Terminated event will update asynchronously)
+        // Wait for process to actually terminate (with timeout)
+        let timeout = Duration::from_secs(5);
+        let start = Instant::now();
+        
+        loop {
+            std::thread::sleep(Duration::from_millis(100));
+            
+            // Check if process terminated
+            let status = {
+                let processes = self.processes.lock().unwrap();
+                if let Some(managed) = processes.get(service_id) {
+                    managed.runtime.status.clone()
+                } else {
+                    return Err("Service disappeared during stop".to_string());
+                }
+            };
+            
+            if matches!(status, ProcessStatus::Stopped | ProcessStatus::Exited | ProcessStatus::Failed) {
+                // Process terminated
+                break;
+            }
+            
+            if start.elapsed() > timeout {
+                // Timeout, force kill
+                kill_process_tree(pid, true)?;
+                
+                // Wait a bit more
+                std::thread::sleep(Duration::from_millis(500));
+                
+                // Update to stopped if still not updated
+                let mut processes = self.processes.lock().unwrap();
+                if let Some(managed) = processes.get_mut(service_id) {
+                    if managed.runtime.status == ProcessStatus::Stopping {
+                        let now = std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .unwrap()
+                            .as_millis() as u64;
+                        
+                        managed.runtime.status = ProcessStatus::Stopped;
+                        managed.runtime.stopped_at = Some(now);
+                        managed.runtime.ready = false;
+                    }
+                }
+                break;
+            }
+        }
+
+        // Return final runtime
         let runtime = {
             let processes = self.processes.lock().unwrap();
             processes.get(service_id).unwrap().runtime.clone()
@@ -208,10 +284,10 @@ impl ProcessManager {
 
     /// Restart a service process
     pub async fn restart(&self, app: &AppHandle, service_id: &str) -> Result<ProcessRuntime, String> {
+        // Stop first (this waits for actual termination)
         self.stop(app, service_id).await?;
         
-        // Wait a bit for process to fully terminate and ports to release
-        std::thread::sleep(std::time::Duration::from_millis(500));
+        // No need for additional sleep - stop() already waited
         
         self.start(app, service_id).await
     }
@@ -226,10 +302,18 @@ impl ProcessManager {
             managed.pid.ok_or_else(|| format!("Service {} has no PID", service_id))?
         };
 
+        // Update status to stopping BEFORE killing
+        {
+            let mut processes = self.processes.lock().unwrap();
+            if let Some(managed) = processes.get_mut(service_id) {
+                managed.runtime.status = ProcessStatus::Stopping;
+            }
+        }
+
         // Force kill process tree
         kill_process_tree(pid, true)?;
 
-        // Terminated event will handle status update
+        // Terminated event will handle final status update to Stopped
         Ok(())
     }
 
