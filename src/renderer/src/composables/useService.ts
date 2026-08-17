@@ -84,6 +84,15 @@ export function useService() {
 
     try {
       await api.process.forceKill(service.id)
+      
+      // Sync runtime state after force kill
+      const runtime = await api.process.getRuntime(service.id)
+      if (Array.isArray(runtime)) {
+        runtimeStore.updateRuntime(service.id, runtime[0])
+      } else {
+        runtimeStore.updateRuntime(service.id, runtime)
+      }
+      
       message.success(`服务 ${service.name} 已强制终止`)
     } catch (err) {
       const error = err as { message?: string }

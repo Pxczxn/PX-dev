@@ -23,6 +23,7 @@ serde_json = "1"
 chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 sysinfo = "0.32"
+tokio = { version = "1", features = ["time"] }
 
 [features]
 custom-protocol = ["tauri/custom-protocol"]

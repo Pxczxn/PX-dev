@@ -39,15 +39,15 @@ impl ProcessManager {
         let store = ConfigStore::open(app)?;
         let service = store.get_service(service_id)?;
 
-        // Check if already running
+        // Check if already running or stopping
         {
             let processes = self.processes.lock().unwrap();
             if let Some(managed) = processes.get(service_id) {
                 if matches!(
                     managed.runtime.status,
-                    ProcessStatus::Running | ProcessStatus::Starting
+                    ProcessStatus::Running | ProcessStatus::Starting | ProcessStatus::Stopping
                 ) {
-                    return Err(format!("Service {} is already running", service.name));
+                    return Err(format!("Service {} is already running or stopping", service.name));
                 }
             }
         }
@@ -231,7 +231,7 @@ impl ProcessManager {
         let start = Instant::now();
         
         loop {
-            std::thread::sleep(Duration::from_millis(100));
+            tokio::time::sleep(Duration::from_millis(100)).await;
             
             // Check if process terminated
             let status = {
@@ -253,7 +253,7 @@ impl ProcessManager {
                 kill_process_tree(pid, true)?;
                 
                 // Wait a bit more
-                std::thread::sleep(Duration::from_millis(500));
+                tokio::time::sleep(Duration::from_millis(500)).await;
                 
                 // Update to stopped if still not updated
                 let mut processes = self.processes.lock().unwrap();
@@ -336,5 +336,40 @@ impl ProcessManager {
                 Ok(runtimes)
             }
         }
+    }
+
+    /// Stop a service if it's running (used before deletion)
+    pub async fn stop_if_running(&self, app: &AppHandle, service_id: &str) -> Result<(), String> {
+        let is_running = {
+            let processes = self.processes.lock().unwrap();
+            if let Some(managed) = processes.get(service_id) {
+                !matches!(
+                    managed.runtime.status,
+                    ProcessStatus::Stopped | ProcessStatus::Exited | ProcessStatus::Failed
+                )
+            } else {
+                false
+            }
+        };
+
+        if is_running {
+            self.stop(app, service_id).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Remove a service from tracking (used after deletion)
+    pub fn remove_service(&self, service_id: &str) {
+        let mut processes = self.processes.lock().unwrap();
+        processes.remove(service_id);
+    }
+
+    /// Stop all services in a workspace
+    pub async fn stop_workspace(&self, app: &AppHandle, service_ids: &[String]) -> Result<(), String> {
+        for service_id in service_ids {
+            self.stop_if_running(app, service_id).await?;
+        }
+        Ok(())
     }
 }

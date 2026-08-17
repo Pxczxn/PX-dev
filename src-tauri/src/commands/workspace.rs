@@ -1,5 +1,6 @@
-use tauri::AppHandle;
+use tauri::{AppHandle, State};
 use crate::config::ConfigStore;
+use crate::process::ProcessManager;
 use crate::types::{Workspace, WorkspaceInput, WorkspacePatch};
 
 #[tauri::command]
@@ -40,8 +41,27 @@ pub async fn update_workspace(
 }
 
 #[tauri::command]
-pub async fn delete_workspace(app: AppHandle, id: String) -> Result<serde_json::Value, String> {
+pub async fn delete_workspace(
+    app: AppHandle,
+    manager: State<'_, ProcessManager>,
+    id: String,
+) -> Result<serde_json::Value, String> {
     let store = ConfigStore::open(&app)?;
+    
+    // Get all services in this workspace
+    let services = store.list_services_by_workspace(&id)?;
+    let service_ids: Vec<String> = services.iter().map(|s| s.id.clone()).collect();
+    
+    // Stop all running processes in this workspace
+    manager.stop_workspace(&app, &service_ids).await?;
+    
+    // Remove from tracking
+    for service_id in &service_ids {
+        manager.remove_service(service_id);
+    }
+    
+    // Delete workspace (cascades to services)
     store.delete_workspace(&id)?;
+    
     Ok(serde_json::json!({ "success": true }))
 }

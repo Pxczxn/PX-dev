@@ -2464,6 +2464,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-shell",
  "tauri-plugin-store",
+ "tokio",
  "uuid",
 ]
 
