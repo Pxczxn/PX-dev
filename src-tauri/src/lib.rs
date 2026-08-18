@@ -3,6 +3,7 @@ mod types;
 mod config;
 mod process;
 mod log;
+mod discovery;
 
 use tauri::{Manager, RunEvent};
 
@@ -43,6 +44,8 @@ pub fn run() {
       commands::workspace::create_workspace,
       commands::workspace::update_workspace,
       commands::workspace::delete_workspace,
+      commands::workspace::workspace_discover,
+      commands::workspace::apply_discovery,
       commands::service::list_services,
       commands::service::create_service,
       commands::service::update_service,
@@ -57,6 +60,8 @@ pub fn run() {
       commands::log::log_clear,
       commands::log::log_history,
       commands::log::log_export,
+      commands::environment::environment_detect_all,
+      commands::environment::environment_detect_single,
     ])
     .build(tauri::generate_context!())
     .expect("error while running tauri application")

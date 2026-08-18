@@ -1,8 +1,10 @@
-<script setup lang="ts">
+﻿<script setup lang="ts">
 // PX Dev — LogsView
 // Multi-tab log viewer with search, clear, copy, export; stderr highlighted
+// Optimized: route query pre-select, log count badges, auto-scroll toggle
 
 import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import {
   NTabs,
   NTabPane,
@@ -11,16 +13,25 @@ import {
   NSpace,
   NScrollbar,
   NEmpty,
+  NBadge,
   useMessage,
   NVirtualList,
 } from 'naive-ui'
-import { CopyOutline, TrashOutline, DownloadOutline, SearchOutline } from '@vicons/ionicons5'
+import {
+  CopyOutline,
+  TrashOutline,
+  DownloadOutline,
+  SearchOutline,
+  ArrowDownOutline,
+  PauseOutline,
+} from '@vicons/ionicons5'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { useLogStore } from '@renderer/stores/logStore'
 import { useLogStream } from '@renderer/composables/useLogStream'
 import { api } from '@renderer/api'
 import { logger } from '@renderer/utils/logger'
 
+const route = useRoute()
 const message = useMessage()
 const workspaceStore = useWorkspaceStore()
 const logStore = useLogStore()
@@ -28,14 +39,12 @@ const logStore = useLogStore()
 const activeServiceId = ref<string | null>(null)
 const searchText = ref('')
 const scrollbarRef = ref<InstanceType<typeof NScrollbar> | null>(null)
+const autoScroll = ref(true)
 
-// Subscribe to active service's log stream (side-effect: IPC subscription)
 useLogStream(activeServiceId)
 
-// Services that can have logs (all services)
 const services = computed(() => workspaceStore.services)
 
-// Current logs
 const currentLogs = computed(() => {
   if (!activeServiceId.value) return []
   const logs = logStore.getLogs(activeServiceId.value)
@@ -43,10 +52,18 @@ const currentLogs = computed(() => {
   return logs.filter((e) => e.text.includes(searchText.value))
 })
 
-// Auto-scroll to bottom on new logs
+function getLogCount(serviceId: string): number {
+  return logStore.getLogs(serviceId).length
+}
+
+function getErrorCount(serviceId: string): number {
+  return logStore.getLogs(serviceId).filter((e) => e.stream === 'stderr').length
+}
+
 watch(
   () => currentLogs.value.length,
   async () => {
+    if (!autoScroll.value) return
     await nextTick()
     scrollbarRef.value?.scrollTo({ top: 999999, behavior: 'smooth' })
   },
@@ -56,8 +73,10 @@ onMounted(async () => {
   await workspaceStore.fetchServices()
   logStore.startListening()
 
-  // Auto-select first service
-  if (services.value.length > 0) {
+  const queryService = route.query.service as string | undefined
+  if (queryService && services.value.some((s) => s.id === queryService)) {
+    activeServiceId.value = queryService
+  } else if (services.value.length > 0) {
     activeServiceId.value = services.value[0].id
   }
 })
@@ -70,6 +89,18 @@ onUnmounted(() => {
 
 function handleTabChange(key: string): void {
   activeServiceId.value = key
+}
+
+function scrollToBottom(): void {
+  scrollbarRef.value?.scrollTo({ top: 999999, behavior: 'smooth' })
+  autoScroll.value = true
+}
+
+function toggleAutoScroll(): void {
+  autoScroll.value = !autoScroll.value
+  if (autoScroll.value) {
+    scrollToBottom()
+  }
 }
 
 async function clearLogs(): Promise<void> {
@@ -128,7 +159,6 @@ function formatTime(ts: number): string {
     </div>
 
     <div v-else class="log-container">
-      <!-- Toolbar -->
       <div class="log-toolbar">
         <NInput
           v-model:value="searchText"
@@ -139,7 +169,22 @@ function formatTime(ts: number): string {
         >
           <template #prefix><SearchOutline /></template>
         </NInput>
-        <NSpace size="small">
+        <NSpace size="small" align="center">
+          <span class="log-count-label" v-if="activeServiceId">
+            共 {{ currentLogs.length }} 条
+            <span v-if="currentLogs.filter(e => e.stream === 'stderr').length > 0" class="error-count">
+              / {{ currentLogs.filter(e => e.stream === 'stderr').length }} 条错误
+            </span>
+          </span>
+          <NButton
+            size="small"
+            quaternary
+            :type="autoScroll ? 'primary' : 'default'"
+            @click="toggleAutoScroll"
+          >
+            <template #icon><ArrowDownOutline v-if="!autoScroll" /><PauseOutline v-else /></template>
+            {{ autoScroll ? '自动滚动中' : '已暂停' }}
+          </NButton>
           <NButton size="small" quaternary @click="copyLogs" :disabled="!activeServiceId">
             <template #icon><CopyOutline /></template>
             复制
@@ -155,7 +200,6 @@ function formatTime(ts: number): string {
         </NSpace>
       </div>
 
-      <!-- Tabs -->
       <NTabs
         type="card"
         size="small"
@@ -167,9 +211,29 @@ function formatTime(ts: number): string {
           v-for="svc in services"
           :key="svc.id"
           :name="svc.id"
-          :tab="svc.name"
         >
-          <NScrollbar ref="scrollbarRef" class="log-scroll" :style="{ maxHeight: 'calc(100vh - 280px)' }">
+          <template #tab>
+            <span class="tab-label">
+              {{ svc.name }}
+              <NBadge
+                v-if="getErrorCount(svc.id) > 0"
+                :value="getErrorCount(svc.id)"
+                type="error"
+                :offset="[6, -2]"
+              />
+              <NBadge
+                v-else-if="getLogCount(svc.id) > 0"
+                :value="getLogCount(svc.id)"
+                type="info"
+                :offset="[6, -2]"
+              />
+            </span>
+          </template>
+          <NScrollbar
+            ref="scrollbarRef"
+            class="log-scroll"
+            :style="{ maxHeight: 'calc(100vh - 280px)' }"
+          >
             <div v-if="currentLogs.length === 0" class="log-empty">
               <NEmpty size="small" description="暂无日志" />
             </div>
@@ -224,6 +288,23 @@ function formatTime(ts: number): string {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+
+.log-count-label {
+  font-size: 12px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+.error-count {
+  color: var(--c-failed);
+  font-weight: 600;
+}
+
+.tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .log-scroll {

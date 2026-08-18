@@ -5,7 +5,7 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_shell::{ShellExt, process::CommandEvent};
 use crate::types::{ProcessRuntime, ProcessStatus, RuntimeChangedPayload};
 use crate::config::ConfigStore;
-use crate::log::{LogManager, LogEntry, LogStream};
+use crate::log::{LogManager, LogEntry, LogStream, decode_bytes};
 use super::{build_command, kill_process_tree};
 
 const EVENT_RUNTIME_CHANGED: &str = "runtime:changed";
@@ -174,7 +174,7 @@ impl ProcessManager {
                                 
                                 if should_process {
                                     // Convert bytes to string using lossy conversion for safety
-                                    let text = String::from_utf8_lossy(&data).to_string();
+                                    let text = decode_bytes(&data);
                                     let entry = LogEntry::new(
                                         service_id_clone.clone(),
                                         LogStream::Stdout,
@@ -196,7 +196,7 @@ impl ProcessManager {
                                 
                                 if should_process {
                                     // Convert bytes to string using lossy conversion for safety
-                                    let text = String::from_utf8_lossy(&data).to_string();
+                                    let text = decode_bytes(&data);
                                     let entry = LogEntry::new(
                                         service_id_clone.clone(),
                                         LogStream::Stderr,
@@ -537,6 +537,7 @@ impl ProcessManager {
     }
 
     /// Stop all services in a workspace
+    #[allow(dead_code)]
     pub async fn stop_workspace(&self, app: &AppHandle, service_ids: &[String]) -> Result<(), String> {
         for service_id in service_ids {
             self.stop_if_running(app, service_id).await?;

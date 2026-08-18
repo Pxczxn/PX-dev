@@ -47,10 +47,16 @@ pub async fn get_process_runtime(
     let runtimes = manager.get_runtime(service_id.as_deref())?;
     
     if service_id.is_some() {
-        // Return single runtime
-        Ok(serde_json::to_value(&runtimes[0]).unwrap())
+        // Return single runtime (use first element or return null-like object)
+        if let Some(runtime) = runtimes.first() {
+            Ok(serde_json::to_value(runtime).unwrap())
+        } else {
+            // Service exists in config but not in runtime map - return default stopped state
+            let default_runtime = ProcessRuntime::new(service_id.unwrap());
+            Ok(serde_json::to_value(&default_runtime).unwrap())
+        }
     } else {
-        // Return array of runtimes
+        // Return array of runtimes (may be empty)
         Ok(serde_json::to_value(&runtimes).unwrap())
     }
 }

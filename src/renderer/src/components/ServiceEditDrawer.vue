@@ -18,6 +18,7 @@ import {
   NCollapseItem,
   NDynamicTags,
   useMessage,
+  type FormRules,
 } from 'naive-ui'
 import { FolderOpenOutline, ScanOutline } from '@vicons/ionicons5'
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
@@ -62,6 +63,7 @@ const emit = defineEmits<{
 
 const message = useMessage()
 const workspaceStore = useWorkspaceStore()
+const formRef = ref<InstanceType<typeof NForm> | null>(null)
 
 const form = ref<ServiceFormData>({
   workspaceId: '',
@@ -108,6 +110,36 @@ const healthCheckTypes = [
 ]
 
 const isEdit = computed(() => props.service !== null)
+
+// ============ Inline Validation ============
+const formRules: FormRules = {
+  name: {
+    required: true,
+    message: '请输入服务名称',
+    trigger: ['blur', 'input'],
+  },
+  cwd: {
+    required: true,
+    message: '请选择或输入工作目录',
+    trigger: ['blur', 'input'],
+  },
+  command: {
+    required: true,
+    message: '请输入启动命令',
+    trigger: ['blur', 'input'],
+  },
+  openUrl: [
+    {
+      validator: (_rule: unknown, value: string) => {
+        if (form.value.autoOpenBrowser && value && !value.trim()) {
+          return new Error('请输入有效的 URL')
+        }
+        return true
+      },
+      trigger: ['blur', 'input'],
+    },
+  ],
+}
 
 // Initialize form when drawer opens
 watch(
@@ -214,8 +246,10 @@ async function handleSave(): Promise<void> {
     return
   }
 
-  if (!form.value.name?.trim() || !form.value.cwd?.trim() || !form.value.command?.trim()) {
-    message.warning('请填写必填字段: 名称、工作目录、命令')
+  // Inline form validation
+  try {
+    await formRef.value?.validate()
+  } catch {
     return
   }
 
@@ -254,11 +288,16 @@ async function handleSave(): Promise<void> {
     @update:show="(v) => emit('update:show', v)"
   >
     <NDrawerContent :title="isEdit ? '编辑服务' : '添加服务'" closable>
-      <NForm label-placement="top">
+      <NForm
+        ref="formRef"
+        :model="form"
+        :rules="formRules"
+        label-placement="top"
+      >
         <NCollapse :default-expanded-names="['basic']" accordion>
           <!-- 基本信息 -->
           <NCollapseItem title="基本信息" name="basic">
-            <NFormItem label="服务名称" required>
+            <NFormItem path="name" label="服务名称" required>
               <NInput v-model:value="form.name" placeholder="例如：前端开发服务器" />
             </NFormItem>
 
@@ -270,7 +309,7 @@ async function handleSave(): Promise<void> {
               <NSelect v-model:value="form.role" :options="serviceRoles" />
             </NFormItem>
 
-            <NFormItem label="工作目录" required>
+            <NFormItem path="cwd" label="工作目录" required>
               <NSpace>
                 <NInput
                   v-model:value="form.cwd"
@@ -291,7 +330,7 @@ async function handleSave(): Promise<void> {
               </NSpace>
             </NFormItem>
 
-            <NFormItem label="启动命令" required>
+            <NFormItem path="command" label="启动命令" required>
               <NInput v-model:value="form.command" placeholder="例如：npm / pnpm / mvn" />
             </NFormItem>
 
@@ -338,7 +377,7 @@ async function handleSave(): Promise<void> {
               <NSwitch v-model:value="form.autoOpenBrowser" />
             </NFormItem>
 
-            <NFormItem v-if="form.autoOpenBrowser" label="打开 URL">
+            <NFormItem v-if="form.autoOpenBrowser" path="openUrl" label="打开 URL">
               <NInput v-model:value="form.openUrl" placeholder="http://localhost:3000" />
             </NFormItem>
 

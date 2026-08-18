@@ -38,7 +38,6 @@ import {
 } from 'naive-ui'
 import { FolderOpenOutline, RefreshOutline, SearchOutline } from '@vicons/ionicons5'
 import type {
-  DetectedEndpoint,
   DetectedEndpointSource,
   DiscoveredProject,
   DiscoveryConfidence,
@@ -115,7 +114,7 @@ function toggleSelectAll(checked: boolean): void {
 // 只选前端
 function selectOnlyFrontend(): void {
   selectedIds.value = projects.value
-    .filter((p) => p.suggestedServiceType === 'frontend' || p.projectType === 'frontend')
+    .filter((p) => p.suggestedRole === 'frontend')
     .map((p) => p.id)
   updateAllSelectedState()
 }
@@ -123,10 +122,7 @@ function selectOnlyFrontend(): void {
 // 只选后端
 function selectOnlyBackend(): void {
   selectedIds.value = projects.value
-    .filter((p) => {
-      const t = p.suggestedServiceType ?? p.projectType
-      return t !== 'frontend'
-    })
+    .filter((p) => p.suggestedRole !== 'frontend')
     .map((p) => p.id)
   updateAllSelectedState()
 }
@@ -139,7 +135,7 @@ function updateAllSelectedState(): void {
 const isOnlyFrontendSelected = computed(() => {
   if (projects.value.length === 0) return false
   const frontendIds = projects.value
-    .filter((p) => p.suggestedServiceType === 'frontend')
+    .filter((p) => p.suggestedRole === 'frontend')
     .map((p) => p.id)
   if (frontendIds.length === 0) return false
   return frontendIds.every((id) => selectedIds.value.includes(id)) && selectedIds.value.length === frontendIds.length
@@ -148,10 +144,7 @@ const isOnlyFrontendSelected = computed(() => {
 const isOnlyBackendSelected = computed(() => {
   if (projects.value.length === 0) return false
   const backendIds = projects.value
-    .filter((p) => {
-      const t = p.suggestedServiceType ?? p.projectType
-      return t !== 'frontend'
-    })
+    .filter((p) => p.suggestedRole !== 'frontend')
     .map((p) => p.id)
   if (backendIds.length === 0) return false
   return backendIds.every((id) => selectedIds.value.includes(id)) && selectedIds.value.length === backendIds.length
@@ -190,28 +183,26 @@ const endpointSourceLabel: Record<DetectedEndpointSource, string> = {
   user: '手动设置',
 }
 
-/**
- * 端口展示元信息：来源徽标 + 可信度 tooltip。
- * 低可信（框架默认值）一律标灰并表述为「推测端口」，避免用户误以为是实测值。
- */
+/** 端口展示元信息：来源徽标 + 可信度 tooltip */
 function portMeta(project: DiscoveredProject): {
   low: boolean
   sourceLabel: string
   tip: string
 } {
-  const endpoint: DetectedEndpoint | undefined = (project.endpoints ?? []).find(
-    (e) => e.port === project.detectedPort,
-  )
-  const source = endpoint?.source ?? 'framework-default'
-  const confidence = endpoint?.confidence ?? 'low'
+  // Rust 端只返回 detectedPort，不返回 endpoints
+  // 因此 source 统一为 'framework-default'，confidence 为 'medium'
+  const port = project.detectedPort
+  if (!port) {
+    return { low: false, sourceLabel: '', tip: '' }
+  }
+  const source: DetectedEndpointSource = 'framework-default'
+  const confidence: DiscoveryConfidence = project.confidence ?? 'medium'
   const low = confidence === 'low'
   const prefix = low ? '推测端口' : '检测到端口'
   return {
     low,
     sourceLabel: endpointSourceLabel[source],
-    tip: `${prefix} ${project.detectedPort}（来源：${endpointSourceLabel[source]}，可信度：${confidenceMeta[confidence].label}）${
-      low ? '；框架默认值可能不准，可在服务详情中修改' : ''
-    }`,
+    tip: `${prefix} ${port}（来源：${endpointSourceLabel[source]}，可信度：${confidenceMeta[confidence].label}）${low ? '；框架默认值可能不准，可在服务详情中修改' : ''}`,
   }
 }
 
@@ -382,8 +373,10 @@ async function handleApply(): Promise<void> {
     </NAlert>
 
     <!-- 候选列表 -->
-    <NSpin :show="scanning">
-      <div class="result-area">
+    <div class="result-area">
+      <NSpin v-if="scanning" style="min-height: 160px; display: flex; justify-content: center; align-items: center;">
+      </NSpin>
+      <template v-else>
         <NEmpty
           v-if="phase === 'idle'"
           description="选择根目录后点击「开始扫描」"
@@ -479,8 +472,8 @@ async function handleApply(): Promise<void> {
             </div>
           </div>
         </NScrollbar>
-      </div>
-    </NSpin>
+      </template>
+    </div>
 
     <template #footer>
       <NSpace justify="space-between" align="center">

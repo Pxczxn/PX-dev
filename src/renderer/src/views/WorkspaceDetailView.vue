@@ -328,21 +328,26 @@ async function deleteWorkspace(): Promise<void> {
 
 <style scoped>
 .page-container {
-  padding: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
 }
 
 .page-header {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  margin-bottom: var(--sp-6);
+  margin-bottom: var(--sp-5);
   gap: var(--sp-4);
+  flex-wrap: wrap;
+  flex-shrink: 0;
 }
 
 .header-left {
   display: flex;
   flex-direction: column;
-  gap: var(--sp-2);
+  gap: var(--sp-3);
 }
 
 /* Breadcrumb */
@@ -350,12 +355,12 @@ async function deleteWorkspace(): Promise<void> {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .breadcrumb-item {
   color: var(--text-3);
-  font-size: 13px;
+  font-size: 12px;
   padding: 0;
   transition: color var(--dur-1) var(--ease-out);
 }
@@ -383,7 +388,7 @@ async function deleteWorkspace(): Promise<void> {
 
 .back-button {
   color: var(--text-3);
-  font-size: 20px;
+  font-size: 18px;
   transition: all var(--dur-1) var(--ease-out);
 }
 
@@ -393,7 +398,7 @@ async function deleteWorkspace(): Promise<void> {
 }
 
 .page-title {
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 600;
   color: var(--text-1);
   margin: 0;
@@ -420,7 +425,7 @@ async function deleteWorkspace(): Promise<void> {
   padding: 6px 12px;
   border-radius: var(--r-md);
   background-color: var(--bg-surface-2);
-  border: 1px solid var(--bg-surface-3);
+  border: 1px solid var(--border-subtle);
 }
 
 .stat-card .stat-label {
@@ -429,7 +434,7 @@ async function deleteWorkspace(): Promise<void> {
 }
 
 .stat-card .stat-value {
-  color: var(--text-2);
+  color: var(--text-1);
   font-weight: 600;
   font-size: 14px;
   font-family: var(--font-mono);
@@ -453,6 +458,10 @@ async function deleteWorkspace(): Promise<void> {
 }
 
 .table-card {
+  flex: 1;
+  min-height: 0;
   margin-top: 0;
+  border-radius: var(--r-lg);
+  overflow: hidden;
 }
 </style>

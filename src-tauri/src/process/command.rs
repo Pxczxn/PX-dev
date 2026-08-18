@@ -4,6 +4,7 @@ use crate::types::Service;
 pub struct BuiltCommand {
     pub program: String,
     pub args: Vec<String>,
+    #[allow(dead_code)]
     pub use_shell: bool,
 }
 

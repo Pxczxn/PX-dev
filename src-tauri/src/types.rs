@@ -61,6 +61,7 @@ pub struct RuntimeChangedPayload {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
+#[allow(dead_code)]
 pub enum LogLevel {
     Stdout,
     Stderr,
@@ -68,6 +69,7 @@ pub enum LogLevel {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
 pub struct LogEntry {
     pub service_id: String,
     pub level: LogLevel,
@@ -75,6 +77,7 @@ pub struct LogEntry {
     pub timestamp: u64,
 }
 
+#[allow(dead_code)]
 impl LogEntry {
     pub fn new(service_id: String, level: LogLevel, message: String) -> Self {
         let timestamp = std::time::SystemTime::now()
@@ -555,6 +558,7 @@ impl ServicePatch {
 // ============ AppConfig ============
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct AppConfig {
     pub version: u32,
     pub settings: Settings,

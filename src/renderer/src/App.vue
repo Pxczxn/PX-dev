@@ -64,6 +64,16 @@ const themeOverrides = computed<GlobalThemeOverrides>(() => {
       textColor4: dark ? '#4a4f5c' : '#a4abb6',
       borderRadius: '10',
     },
+    // Tooltip 在暗色模式下默认 #303030 太丑，与自定义 token 体系对齐
+    Tooltip: {
+      color: dark ? '#1c1f29' : '#ffffff',
+      textColor: dark ? '#e8eaed' : '#1a1d23',
+      borderRadius: '8px',
+      boxShadow: dark
+        ? '0 8px 24px rgba(0,0,0,0.45)'
+        : '0 8px 24px rgba(16,24,40,0.12)',
+      padding: '8px 12px',
+    },
   }
 })
 

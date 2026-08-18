@@ -6,6 +6,7 @@ import { onMounted, ref, computed, defineAsyncComponent } from 'vue'
 import { NCard, NSpin, NSelect, NSpace, NButton, useMessage } from 'naive-ui'
 import { AddOutline } from '@vicons/ionicons5'
 import ServiceTable from '@renderer/components/ServiceTable.vue'
+import EmptyState from '@renderer/components/EmptyState.vue'
 const ServiceEditDrawer = defineAsyncComponent(() => import('@renderer/components/ServiceEditDrawer.vue'))
 import { useWorkspaceStore } from '@renderer/stores/workspaceStore'
 import { useRuntimeStore } from '@renderer/stores/runtimeStore'
@@ -82,15 +83,25 @@ async function handleDeleteService(svc: Service): Promise<void> {
     </div>
 
     <NSpin :show="workspaceStore.loading">
-      <NCard size="small" :bordered="false" class="table-card">
-        <ServiceTable
-          :services="filteredServices"
-          :workspaces="workspaceStore.workspaces"
-          group-mode="workspace-role"
-          @edit="openEditService"
-          @delete="handleDeleteService"
+      <template v-if="workspaceStore.services.length > 0">
+        <NCard size="small" :bordered="false" class="table-card">
+          <ServiceTable
+            :services="filteredServices"
+            :workspaces="workspaceStore.workspaces"
+            group-mode="workspace-role"
+            @edit="openEditService"
+            @delete="handleDeleteService"
+          />
+        </NCard>
+      </template>
+      <template v-else-if="!workspaceStore.loading">
+        <EmptyState
+          title="还没有添加任何服务"
+          description="在工作区中创建你的第一个服务，或先创建一个工作区来管理相关服务"
+          action-text="创建服务"
+          @action="openAddService"
         />
-      </NCard>
+      </template>
     </NSpin>
 
     <ServiceEditDrawer
@@ -108,16 +119,20 @@ async function handleDeleteService(svc: Service): Promise<void> {
   align-items: center;
   justify-content: space-between;
   margin-bottom: var(--sp-4);
+  flex-wrap: wrap;
+  gap: var(--sp-3);
 }
 
 .page-title {
-  font-size: 20px;
-  font-weight: 600;
+  font-size: var(--fs-title);
+  font-weight: 650;
   color: var(--text-1);
   margin: 0;
 }
 
 .table-card {
   margin-top: 0;
+  border-radius: var(--r-lg);
+  overflow: hidden;
 }
 </style>

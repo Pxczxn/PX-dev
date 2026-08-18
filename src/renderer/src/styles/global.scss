@@ -56,6 +56,11 @@
   --sp-10: 40px;
   --sp-12: 48px;
 
+  /* ---- Layout ---- */
+  --sidebar-width: 220px;
+  --sidebar-collapsed-width: 64px;
+  --content-max-width: 1600px;
+
   /* ---- Elevation ---- */
   --shadow-1: 0 1px 2px rgba(0, 0, 0, 0.4);
   --shadow-2: 0 8px 24px rgba(0, 0, 0, 0.35);
@@ -82,6 +87,16 @@
   --dur-1: 150ms;
   --dur-2: 250ms;
   --dur-3: 400ms;
+
+  /* ---- Decorative effects ---- */
+  /* Accent glow: 用于 StatCard 等卡片的柔和光晕效果 */
+  --glow-sm: 0 0 0 1px var(--border-subtle), 0 2px 8px rgba(43, 140, 255, 0.08);
+  --glow-md: 0 0 0 1px var(--border-default), 0 4px 16px rgba(43, 140, 255, 0.12);
+  --glow-accent: 0 0 0 1px var(--accent), 0 4px 20px rgba(43, 140, 255, 0.22);
+
+  /* Hover lift: 悬停时卡片上浮 + 光晕 */
+  --hover-lift: translateY(-2px);
+  --hover-lift-strong: translateY(-4px);
 }
 
 [data-theme="light"] {
@@ -118,6 +133,23 @@
   --shadow-2: 0 8px 24px rgba(16, 24, 40, 0.08);
   --shadow-3: 0 16px 40px rgba(16, 24, 40, 0.12);
   --shadow-accent: 0 8px 24px rgba(43, 140, 255, 0.2);
+
+  /* Light mode decorative effects */
+  --glow-sm: 0 0 0 1px var(--border-subtle), 0 2px 8px rgba(0, 0, 0, 0.06);
+  --glow-md: 0 0 0 1px var(--border-default), 0 4px 16px rgba(0, 0, 0, 0.08);
+  --glow-accent: 0 0 0 1px var(--accent), 0 4px 20px rgba(43, 140, 255, 0.18);
+}
+
+/* 无障碍：尊重用户的动画偏好设置 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 /* ---- Reset ---- */
@@ -180,8 +212,18 @@ body {
 
 /* ---- Page layout utilities ---- */
 .page-container {
-  padding: var(--sp-6);
+  padding: var(--sp-5) var(--sp-6);
   min-height: 100%;
+  max-width: calc(100vw - var(--sidebar-width));
+  width: 100%;
+  margin: 0 auto;
+}
+
+@media (max-width: 1024px) {
+  .page-container {
+    padding: var(--sp-4);
+    max-width: 100%;
+  }
 }
 
 .page-header {
@@ -189,7 +231,8 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
-  margin-bottom: var(--sp-6);
+  margin-bottom: var(--sp-5);
+  flex-wrap: wrap;
 }
 
 .page-title {
@@ -216,6 +259,13 @@ body {
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
   overflow: hidden;
+  background: var(--bg-surface-1);
+  transition: border-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+
+.table-card:hover {
+  border-color: var(--border-default);
 }
 
 .flex-row {

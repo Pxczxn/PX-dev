@@ -104,13 +104,15 @@ function openWorkspace(ws: Workspace): void {
   border: 1px solid var(--border-subtle);
   border-radius: var(--r-lg);
   cursor: pointer;
-  transition: border-color var(--dur-2) var(--ease-out),
-    transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+  transition:
+    border-color var(--dur-2) var(--ease-out),
+    transform var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
 }
 
 .workspace-card:hover {
   border-color: var(--accent);
-  transform: translateY(-3px);
+  transform: translateY(-2px);
   box-shadow: var(--shadow-2);
 }
 
@@ -118,7 +120,7 @@ function openWorkspace(ws: Workspace): void {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin-bottom: 12px;
+  margin-bottom: 10px;
 }
 
 .ws-card-icon {
@@ -129,7 +131,7 @@ function openWorkspace(ws: Workspace): void {
   align-items: center;
   justify-content: center;
   color: #fff;
-  font-size: 20px;
+  font-size: 18px;
   flex-shrink: 0;
 }
 
@@ -165,7 +167,7 @@ function openWorkspace(ws: Workspace): void {
   justify-content: space-between;
   font-size: 12px;
   color: var(--text-4);
-  padding-top: 8px;
+  padding-top: 10px;
   border-top: 1px solid var(--border-subtle);
 }
 </style>

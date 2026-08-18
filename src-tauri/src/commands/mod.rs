@@ -4,3 +4,4 @@ pub mod workspace;
 pub mod service;
 pub mod process;
 pub mod log;
+pub mod environment;

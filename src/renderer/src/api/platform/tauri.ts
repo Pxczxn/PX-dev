@@ -60,7 +60,10 @@ export function createTauriAdapter(): PxDevClient {
     system: {
       ping: async () => await invoke<string>('px_ping'),
       openPath: notImplemented('system.openPath'),
-      openExternal: notImplemented('system.openExternal'),
+      openExternal: async (url: string) => {
+        const { open } = await import('@tauri-apps/plugin-shell')
+        await open(url)
+      },
       selectDirectory: async () => {
         const { open } = await import('@tauri-apps/plugin-dialog')
         const selected = await open({
@@ -87,8 +90,8 @@ export function createTauriAdapter(): PxDevClient {
       create: async (input: Record<string, unknown>) => await invoke('create_workspace', { input }),
       update: async (input: Record<string, unknown>) => await invoke('update_workspace', { input }),
       delete: async (id: string) => await invoke('delete_workspace', { id }),
-      discover: notImplemented('workspace.discover'),
-      applyDiscovery: notImplemented('workspace.applyDiscovery'),
+      discover: async (input: Record<string, unknown>) => await invoke('workspace_discover', input),
+      applyDiscovery: async (input: Record<string, unknown>) => await invoke('apply_discovery', input),
       getRuntimeEndpoints: notImplemented('workspace.getRuntimeEndpoints'),
     },
     service: {
@@ -125,7 +128,10 @@ export function createTauriAdapter(): PxDevClient {
       export: async (serviceId: string, savePath?: string) => 
         await invoke<{ success: boolean; path?: string }>('log_export', { serviceId, savePath }),
     },
-    environment: createNotImplementedNamespace('environment'),
+    environment: {
+      detect: async () => await invoke('environment_detect_all'),
+      detectSingle: async (name: string) => await invoke('environment_detect_single', { name }),
+    },
     port: createNotImplementedNamespace('port'),
     events: {
       onLogBatch: (callback) => {

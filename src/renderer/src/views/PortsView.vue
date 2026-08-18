@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // PX Dev — PortsView
-// Common ports panel + manual detect + kill owner
+// 端口监控面板：手动检测 + 常用端口列表
 
 import { onMounted, ref, h } from 'vue'
 import {
@@ -14,7 +14,7 @@ import {
   NSpin,
   useMessage,
 } from 'naive-ui'
-import { RefreshOutline, SearchOutline } from '@vicons/ionicons5'
+import { RefreshOutline, SearchOutline, CloseCircleOutline } from '@vicons/ionicons5'
 import { usePortStore } from '@renderer/stores/portStore'
 import type { PortOwner } from '@shared/types'
 
@@ -88,15 +88,18 @@ const columns = [
 <template>
   <div class="page-container">
     <div class="page-header">
-      <h2 class="page-title">端口</h2>
+      <div>
+        <h2 class="page-title">端口</h2>
+        <p class="page-subtitle">检测常用端口状态，快速定位冲突进程</p>
+      </div>
       <NButton @click="portStore.checkCommonPorts()" :loading="portStore.checking">
         <template #icon><RefreshOutline /></template>
         刷新
       </NButton>
     </div>
 
-    <!-- Manual Check -->
-    <NCard title="手动检测" size="small" :bordered="false" class="table-card">
+    <!-- 手动检测 -->
+    <NCard title="手动检测" size="small" :bordered="false" class="port-card">
       <NSpace>
         <NInputNumber
           v-model:value="manualPort"
@@ -121,17 +124,46 @@ const columns = [
       </NSpace>
     </NCard>
 
-    <!-- Common Ports Table -->
-    <NCard title="常用端口" size="small" style="margin-top: 16px;" :bordered="false" class="table-card">
+    <!-- 常用端口表格 -->
+    <NCard title="常用端口" size="small" :bordered="false" class="port-card" style="margin-top: 16px;">
       <NSpin :show="portStore.checking">
         <NDataTable
           :columns="columns"
           :data="portStore.results"
           :bordered="false"
           size="small"
+          :row-class-name="() => 'port-table-row'"
         />
       </NSpin>
     </NCard>
   </div>
 </template>
 
+<style scoped>
+/* 副标题 */
+.page-subtitle {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--text-3);
+}
+
+/* 端口卡片 */
+.port-card {
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  transition:
+    border-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+
+.port-card:hover {
+  border-color: var(--border-default);
+  box-shadow: var(--glow-sm);
+}
+
+/* 表格行悬停 */
+:deep(.port-table-row:hover) {
+  background: var(--bg-hover) !important;
+}
+</style>

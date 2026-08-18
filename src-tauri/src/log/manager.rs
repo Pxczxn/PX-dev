@@ -2,10 +2,9 @@ use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, Mutex};
 use tauri::{AppHandle, Emitter};
 
-use super::types::{LogEntry, LogStream, LogBatchPayload};
+use super::types::{LogEntry, LogBatchPayload};
 
 const EVENT_LOG_BATCH: &str = "log:batch";
-const DEFAULT_MAX_LINES: usize = 5000;
 const FLUSH_INTERVAL_MS: u64 = 80;
 
 /// Per-service log buffer with history and pending batch
@@ -180,6 +179,7 @@ impl LogManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::types::LogStream;
 
     #[test]
     fn test_log_entry_creation() {

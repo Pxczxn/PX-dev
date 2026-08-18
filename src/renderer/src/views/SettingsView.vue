@@ -50,6 +50,7 @@ onMounted(async () => {
 
 const saving = ref(false)
 const changingDataPath = ref(false)
+const notificationEnabled = ref(localStorage.getItem('px-dev:notify-enabled') !== '0')
 
 async function handleSelectDataPath(): Promise<void> {
   if (changingDataPath.value) return
@@ -59,7 +60,7 @@ async function handleSelectDataPath(): Promise<void> {
     if (result.success) {
       message.success('数据目录已更改，应用将重启...')
     } else if (result.reason === 'cancelled') {
-      // User cancelled, do nothing
+      // user cancelled
     } else if (result.reason === 'same') {
       message.info('已选择相同的路径，无需更改')
     }
@@ -80,13 +81,9 @@ async function handleOpenDataPath(): Promise<void> {
 }
 
 async function handleSave(): Promise<void> {
-  if (saving.value) {
-    return
-  }
+  if (saving.value) return
   saving.value = true
   try {
-    // settingsStore.settings 是 Vue 响应式对象，直接跨 IPC 传递会导致
-    // 结构化克隆失败；这里用 toRaw + 显式解构生成纯数据快照。
     const raw = toRaw(settingsStore.settings)
     const payload: Settings = {
       theme: raw.theme,
@@ -108,14 +105,12 @@ async function handleSave(): Promise<void> {
   }
 }
 
-/** 将保存异常转换为对用户友好、同时保留调试信息的提示文案 */
 function formatSaveError(err: unknown): string {
   if (!(err instanceof Error)) {
     return `保存失败：${String(err)}`
   }
-  // 结构化克隆失败通常意味着又有响应式对象泄漏到了 IPC 层
   if (err.message.includes('could not be cloned')) {
-    return '保存失败：设置数据无法序列化，请重启应用后重试（详见控制台日志）'
+    return '保存失败：设置数据无法序列化，请重启应用后重试'
   }
   return `保存失败：${err.message}`
 }
@@ -125,12 +120,15 @@ function formatSaveError(err: unknown): string {
   <div class="page-container">
     <div class="page-header">
       <h2 class="page-title">设置</h2>
-      <NButton type="primary" :loading="saving" @click="handleSave">保存设置</NButton>
+      <NButton type="primary" :loading="saving" @click="handleSave">
+        保存设置
+      </NButton>
     </div>
 
-    <NSpace vertical :size="16">
-      <!-- General -->
-      <NCard title="通用" size="small" :bordered="false">
+    <!-- 设置卡片网格 -->
+    <div class="settings-grid">
+      <!-- 通用 -->
+      <NCard title="通用" size="small" :bordered="false" class="settings-card">
         <NForm label-placement="left" :label-width="140">
           <NFormItem label="关闭行为">
             <NSelect
@@ -139,11 +137,21 @@ function formatSaveError(err: unknown): string {
               style="width: 240px;"
             />
           </NFormItem>
+          <NFormItem label="系统通知">
+            <NSwitch
+              :value="notificationEnabled"
+              @update:value="(v: boolean) => {
+                notificationEnabled = v
+                localStorage.setItem('px-dev:notify-enabled', v ? '1' : '0')
+              }"
+            />
+            <span class="form-hint">服务启动失败或停止时发送通知</span>
+          </NFormItem>
         </NForm>
       </NCard>
 
-      <!-- Appearance -->
-      <NCard title="外观" size="small" :bordered="false">
+      <!-- 外观 -->
+      <NCard title="外观" size="small" :bordered="false" class="settings-card">
         <NForm label-placement="left" :label-width="140">
           <NFormItem label="主题">
             <NSelect
@@ -158,8 +166,8 @@ function formatSaveError(err: unknown): string {
         </NForm>
       </NCard>
 
-      <!-- Startup -->
-      <NCard title="启动" size="small" :bordered="false">
+      <!-- 启动 -->
+      <NCard title="启动" size="small" :bordered="false" class="settings-card">
         <NForm label-placement="left" :label-width="140">
           <NFormItem label="启动后最小化">
             <NSwitch v-model:value="settingsStore.settings.startMinimized" />
@@ -179,8 +187,8 @@ function formatSaveError(err: unknown): string {
         </NForm>
       </NCard>
 
-      <!-- Logs -->
-      <NCard title="日志" size="small" :bordered="false">
+      <!-- 日志 -->
+      <NCard title="日志" size="small" :bordered="false" class="settings-card">
         <NForm label-placement="left" :label-width="140">
           <NFormItem label="最大日志行数">
             <NInputNumber
@@ -194,8 +202,8 @@ function formatSaveError(err: unknown): string {
         </NForm>
       </NCard>
 
-      <!-- Browser -->
-      <NCard title="浏览器" size="small" :bordered="false">
+      <!-- 浏览器 -->
+      <NCard title="浏览器" size="small" :bordered="false" class="settings-card">
         <NForm label-placement="left" :label-width="140">
           <NFormItem label="默认浏览器">
             <NInput
@@ -207,32 +215,59 @@ function formatSaveError(err: unknown): string {
         </NForm>
       </NCard>
 
-      <!-- Data -->
-      <NCard title="数据" size="small" :bordered="false">
+      <!-- 数据 -->
+      <NCard title="数据" size="small" :bordered="false" class="settings-card">
         <NForm label-placement="left" :label-width="140">
           <NFormItem label="数据存放目录">
-            <NText v-if="currentDataPath" depth="3" style="word-break: break-all; max-width: 400px; display: block; margin-bottom: 8px;">
+            <NText
+              v-if="currentDataPath"
+              depth="3"
+              style="word-break: break-all; max-width: 400px; display: block; margin-bottom: 8px; font-size: 12px;"
+            >
               {{ currentDataPath }}
             </NText>
             <NButtonGroup>
-              <NButton
-                size="small"
-                :loading="changingDataPath"
-                @click="handleSelectDataPath"
-              >
+              <NButton size="small" :loading="changingDataPath" @click="handleSelectDataPath">
                 更改目录
               </NButton>
-              <NButton
-                v-if="currentDataPath"
-                size="small"
-                @click="handleOpenDataPath"
-              >
+              <NButton v-if="currentDataPath" size="small" @click="handleOpenDataPath">
                 打开目录
               </NButton>
             </NButtonGroup>
           </NFormItem>
         </NForm>
       </NCard>
-    </NSpace>
+    </div>
   </div>
 </template>
+
+<style scoped>
+/* 设置页面网格布局 */
+.settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(420px, 1fr));
+  gap: var(--sp-4);
+}
+
+.settings-card {
+  background: var(--bg-surface-1);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-lg);
+  transition:
+    border-color var(--dur-2) var(--ease-out),
+    box-shadow var(--dur-2) var(--ease-out);
+}
+
+.settings-card:hover {
+  border-color: var(--border-default);
+  box-shadow: var(--glow-sm);
+}
+
+/* 表单项辅助说明文字 */
+.form-hint {
+  margin-left: 12px;
+  font-size: 12px;
+  color: var(--text-4);
+  user-select: none;
+}
+</style>
